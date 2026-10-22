@@ -57,6 +57,29 @@ export default function Playground({ onClose, request }) {
   const frameRef = useRef(null);
   const rootRef = useRef(null);
   const [closeOnOutside, setCloseOnOutside] = useState(() => readJSON(OUTSIDE_KEY, false));
+  // Phones show either the code or the result, not both. Code sent from a question
+  // opens on the result, since running the experiment is the point.
+  const [mobileView, setMobileView] = useState(request ? 'output' : 'code');
+
+  // On phones the on-screen keyboard shrinks the *visual* viewport but (on iOS) not the
+  // layout viewport, so a full-screen fixed panel would sit partly under the keyboard.
+  // Expose the visual viewport's size and offset for the mobile CSS to use.
+  useEffect(() => {
+    const vv = window.visualViewport;
+    const el = rootRef.current;
+    if (!vv || !el) return;
+    function update() {
+      el.style.setProperty('--vv-height', `${vv.height}px`);
+      el.style.setProperty('--vv-top', `${vv.offsetTop}px`);
+    }
+    update();
+    vv.addEventListener('resize', update);
+    vv.addEventListener('scroll', update);
+    return () => {
+      vv.removeEventListener('resize', update);
+      vv.removeEventListener('scroll', update);
+    };
+  }, []);
 
   // "Click outside to minimize": any press outside the window closes it.
   // (Clicks inside the preview iframe never reach this document, so they don't count.)
@@ -83,6 +106,7 @@ export default function Playground({ onClose, request }) {
     lastNonce.current = request.nonce;
     setCode(request.code);
     setTab(firstFilledTab(request.code));
+    setMobileView('output');
   }, [request]);
 
   useEffect(() => {
@@ -102,7 +126,7 @@ export default function Playground({ onClose, request }) {
   }, []);
 
   return (
-    <div className="playground" role="dialog" aria-label="Code playground" ref={rootRef}>
+    <div className="playground" role="dialog" aria-label="Code playground" ref={rootRef} data-view={mobileView}>
       <div className="pg-toolbar">
         <strong className="pg-title">Playground</strong>
         <div className="pg-tabs" role="tablist">
@@ -113,26 +137,41 @@ export default function Playground({ onClose, request }) {
               role="tab"
               aria-selected={tab === t}
               className={`pg-tab ${tab === t ? 'is-active' : ''}`}
-              onClick={() => setTab(t)}
+              onClick={() => {
+                setTab(t);
+                setMobileView('code');
+              }}
             >
               {t.toUpperCase()}
             </button>
           ))}
+          {/* Phones only (hidden by CSS on wider screens): run and switch to the result. */}
+          <button
+            type="button"
+            className="pg-tab pg-tab--result"
+            aria-pressed={mobileView === 'output'}
+            onClick={() => {
+              run();
+              setMobileView('output');
+            }}
+          >
+            Result ▸
+          </button>
         </div>
         <label className="pg-auto">
           <input type="checkbox" checked={autoRun} onChange={(e) => setAutoRun(e.target.checked)} /> Auto-run
         </label>
-        <label className="pg-auto">
+        <label className="pg-auto pg-outside">
           <input type="checkbox" checked={closeOnOutside} onChange={(e) => setCloseOnOutside(e.target.checked)} />{' '}
           Click outside to minimize
         </label>
-        <button type="button" className="btn btn--small" onClick={() => setCode(DEFAULT_CODE)}>
+        <button type="button" className="btn btn--small pg-reset" onClick={() => setCode(DEFAULT_CODE)}>
           Reset
         </button>
-        <button type="button" className="btn btn--primary btn--small" onClick={run} title="Ctrl+Enter">
+        <button type="button" className="btn btn--primary btn--small pg-run" onClick={run} title="Ctrl+Enter">
           Run ▸
         </button>
-        <button type="button" className="btn btn--ghost btn--small" onClick={onClose} aria-label="Close playground">
+        <button type="button" className="btn btn--ghost btn--small pg-close" onClick={onClose} aria-label="Close playground">
           ✕
         </button>
       </div>
@@ -153,7 +192,9 @@ export default function Playground({ onClose, request }) {
           ))}
         </div>
         <div className="pg-output">
-          <iframe ref={frameRef} className="pg-preview" title="Preview" sandbox="allow-scripts allow-modals allow-forms" srcDoc={srcDoc} />
+          {/* Remounted when the phone "Result" view opens: a frame that loaded while hidden
+              (display: none) may never paint once shown, so it always loads while visible. */}
+          <iframe key={mobileView} ref={frameRef} className="pg-preview" title="Preview" sandbox="allow-scripts allow-modals allow-forms" srcDoc={srcDoc} />
           <section className="pg-console" aria-label="Console">
             <header className="pg-console__head">
               <span>Console</span>

@@ -1040,20 +1040,112 @@
   color: var(--danger);
 }
 
+/* The "Result" tab only exists on phones. */
+.pg-tab--result {
+  display: none;
+}
+
+/* Phones: full screen, and either the code OR the result, switched from the toolbar. */
 @media (max-width: 760px) {
+  /* Lock the page behind the full-screen playground. */
+  html:has(.playground) {
+    overflow: hidden;
+  }
+
   .playground {
-    inset: 0;
+    /* Fill the *visible* viewport (above the on-screen keyboard); see Playground.jsx. */
+    inset: var(--vv-top, 0) 0 auto 0;
     width: auto;
-    height: auto;
+    height: var(--vv-height, 100dvh);
     min-width: 0;
+    min-height: 0;
+    padding: 8px 8px max(8px, env(safe-area-inset-bottom));
+    border: 0;
     border-radius: 0;
     resize: none;
   }
 
-  .pg-grid {
-    grid-template-columns: 1fr;
-    grid-template-rows: minmax(0, 1fr) minmax(0, 1.4fr);
+  /* Toolbar row 1: tabs + Result + close. Row 2: the small options. */
+  .pg-toolbar {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    grid-template-areas:
+      'tabs tabs close'
+      'auto .    reset';
+    gap: 6px 8px;
+    margin-bottom: 8px;
   }
+
+  .pg-title,
+  .pg-outside, /* nothing is "outside" a full-screen panel */
+  .pg-run {
+    display: none;
+  }
+
+  .pg-tabs {
+    grid-area: tabs;
+    min-width: 0;
+    margin: 0;
+  }
+
+  .pg-close {
+    grid-area: close;
+  }
+
+  .pg-toolbar .pg-auto {
+    grid-area: auto;
+  }
+
+  .pg-reset {
+    grid-area: reset;
+  }
+
+  .pg-tab {
+    padding: 8px 12px;
+    white-space: nowrap;
+  }
+
+  .pg-tab--result {
+    display: inline-block;
+    margin-left: auto;
+    border-color: var(--accent);
+    color: var(--accent-strong);
+  }
+
+  .playground[data-view='output'] .pg-tab--result {
+    background: var(--accent);
+    color: var(--on-accent);
+  }
+
+  /* While the result is showing, no code tab is "current". */
+  .playground[data-view='output'] .pg-tab.is-active:not(.pg-tab--result) {
+    border-color: var(--border);
+    background: var(--surface);
+    color: inherit;
+  }
+
+  .pg-grid {
+    /* minmax(0, 1fr), not 1fr: a long code line must scroll inside the editor,
+       not widen the column past the screen (1fr's minimum is the content width). */
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+  }
+
+  .playground[data-view='code'] .pg-output,
+  .playground[data-view='output'] .pg-editors {
+    display: none;
+  }
+
+  .pg-output {
+    grid-template-rows: minmax(0, 3fr) minmax(0, 2fr);
+    gap: 8px;
+  }
+}
+
+/* Scrolling to the end of the editor or console shouldn't scroll the page behind. */
+.editor__scroll,
+.pg-console__list {
+  overscroll-behavior: contain;
 }
 
 /* ---------- Notebook ---------- */
