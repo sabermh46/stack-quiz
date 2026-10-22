@@ -7,7 +7,12 @@ import { VitePWA } from 'vite-plugin-pwa';
 // A leading dot matches every subdomain.
 const allowedHosts = ['.ngrok-free.app', '.ngrok-free.dev', '.ngrok.app', '.ngrok.dev', '.ngrok.io'];
 
+// The URL path the app is served from. '/' locally; GitHub Pages serves a project
+// site from '/<repo>/', so the deploy workflow sets BASE_PATH (see .github/workflows/deploy.yml).
+const base = process.env.BASE_PATH ?? '/';
+
 export default defineConfig({
+  base,
   server: { allowedHosts },
   preview: { allowedHosts },
   plugins: [
@@ -18,13 +23,13 @@ export default defineConfig({
       registerType: 'prompt',
       includeAssets: ['favicon.svg', 'apple-touch-icon.png'],
       manifest: {
-        id: '/',
+        id: base,
         name: 'Skill Drills',
         short_name: 'Skill Drills',
         description:
           'Practice tricky HTML, CSS, JavaScript, React and TypeScript concepts for coding screenings.',
-        start_url: '/',
-        scope: '/',
+        start_url: base,
+        scope: base,
         display: 'standalone',
         orientation: 'any',
         background_color: '#0f1115',

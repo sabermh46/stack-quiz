@@ -19,7 +19,7 @@ export default function Header({ theme, onThemeChange, onHome, onStats, onNotebo
           disabled={inQuiz}
           title={inQuiz ? 'Use “Quit” to leave the session' : 'Home'}
         >
-          <img className="brand__logo" src="/favicon.svg" alt="" width="28" height="28" />
+          <img className="brand__logo" src={`${import.meta.env.BASE_URL}favicon.svg`} alt="" width="28" height="28" />
           <span>Skill Drills</span>
         </button>
         <div className="header-actions">
