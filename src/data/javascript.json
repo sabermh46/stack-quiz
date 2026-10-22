@@ -1,0 +1,1228 @@
+[
+  {
+    "id": "javascript-001",
+    "difficulty": "medium",
+    "topic": "Closures in loops: var vs let",
+    "kind": "output",
+    "question": "What does this log?",
+    "snippets": [
+      {
+        "lang": "js",
+        "code": "const fns = [];\n\nfor (var i = 0; i < 3; i++) {\n  let j = i;\n  fns.push(() => i + j);\n}\n\nconsole.log(fns.map((f) => f()));"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "`[0, 2, 4]`",
+        "why": "That would be right if `i` were also per-iteration (declared with `let`). With `var` there's a single `i` shared by every closure, and it's `3` when they run."
+      },
+      {
+        "id": "b",
+        "text": "`[5, 5, 5]`",
+        "why": "This assumes all closures share one `j` holding its last value (2). But `let j` inside the loop body creates a new binding on every iteration, so each closure keeps its own `j`."
+      },
+      {
+        "id": "c",
+        "text": "`[6, 6, 6]`",
+        "why": "6 would need `j` to be 3 as well (3 + 3), but `j` never becomes 3: the body doesn't run when `i` is 3. And each closure has its own `j` anyway."
+      },
+      {
+        "id": "d",
+        "text": "`[3, 4, 5]`"
+      }
+    ],
+    "answer": "d",
+    "explanation": "Closures capture variables (bindings), not values.\n\n- `var i` is function-scoped: one binding for the whole loop. When the functions run (after the loop), `i` is `3`.\n- `let j` is block-scoped to the loop body, so each iteration gets a fresh `j` holding 0, 1, then 2.\n\nSo the functions return `3 + 0`, `3 + 1`, `3 + 2` → `[3, 4, 5]`.",
+    "references": [
+      "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Closures#creating_closures_in_loops_a_common_mistake",
+      "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/let"
+    ]
+  },
+  {
+    "id": "javascript-002",
+    "difficulty": "hard",
+    "topic": "Event loop: microtasks vs macrotasks",
+    "kind": "output",
+    "question": "In what order are the letters logged?",
+    "snippets": [
+      {
+        "lang": "js",
+        "code": "console.log('A');\n\nsetTimeout(() => console.log('B'), 0);\n\nPromise.resolve().then(() => console.log('C'));\n\nqueueMicrotask(() => console.log('D'));\n\n(async () => {\n  console.log('E');\n  await null;\n  console.log('F');\n})();\n\nconsole.log('G');"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "A E G F C D B",
+        "why": "`await` doesn't jump the queue. When the async function reaches `await null`, its continuation is queued as a microtask *at that moment*, after C and D, which were queued earlier."
+      },
+      {
+        "id": "b",
+        "text": "A E G C D F B"
+      },
+      {
+        "id": "c",
+        "text": "A G E C D F B",
+        "why": "Calling an async function runs its body synchronously up to the first `await`, so E is logged immediately, before G."
+      },
+      {
+        "id": "d",
+        "text": "A E G C D B F",
+        "why": "`setTimeout` callbacks are tasks (macrotasks). The whole microtask queue, including F, is drained before the next task runs, even with a 0ms delay."
+      }
+    ],
+    "answer": "b",
+    "explanation": "1. Synchronous code runs first: **A**, then the async function body up to its first `await`: **E**, then **G**.\n2. Microtasks were queued in this order: the `.then` callback (C), the `queueMicrotask` callback (D), then the async function's continuation after `await null` (F). They run FIFO: **C D F**.\n3. Only when the microtask queue is empty does the event loop take the next task: the timeout, **B**.\n\nResult: A E G C D F B.",
+    "references": [
+      "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Event_loop",
+      "https://developer.mozilla.org/en-US/docs/Web/API/HTML_DOM_API/Microtask_guide"
+    ]
+  },
+  {
+    "id": "javascript-003",
+    "difficulty": "hard",
+    "topic": "this binding: methods vs arrows",
+    "kind": "output",
+    "question": "This code runs as an ES module. What does it log?",
+    "snippets": [
+      {
+        "lang": "js",
+        "code": "const obj = {\n  name: 'obj',\n  regular() {\n    return this?.name;\n  },\n  arrow: () => this?.name,\n  nested() {\n    const inner = () => this?.name;\n    return inner();\n  },\n};\n\nconst { regular } = obj;\nconsole.log(regular(), obj.arrow(), obj.nested());"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "`obj obj obj`",
+        "why": "Destructuring `regular` detaches it from the object: `regular()` is a plain call, so `this` is `undefined` (modules are always strict). And an arrow function never takes `this` from the object literal it's written in."
+      },
+      {
+        "id": "b",
+        "text": "`undefined obj obj`",
+        "why": "Arrow functions don't have their own `this`; they use the `this` of the scope where they're *defined*. An object literal isn't a scope, so `arrow` uses the module's top-level `this`, which is `undefined`."
+      },
+      {
+        "id": "c",
+        "text": "`undefined undefined obj`"
+      },
+      {
+        "id": "d",
+        "text": "A TypeError is thrown when calling `regular()`",
+        "why": "`this` is `undefined`, so `this.name` would throw, but the code uses optional chaining (`this?.name`), which returns `undefined` instead."
+      }
+    ],
+    "answer": "c",
+    "explanation": "`this` for a regular function depends on **how it's called**; for an arrow function it's fixed by **where it's defined**.\n\n- `regular()`: called without an object, in strict mode (ES modules are strict) → `this` is `undefined` → `undefined`.\n- `obj.arrow()`: the arrow was defined at module top level, where `this` is `undefined` → `undefined`.\n- `obj.nested()`: called as a method, so `this` is `obj`; the inner arrow inherits that `this` → `'obj'`.",
+    "references": [
+      "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/this",
+      "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Functions/Arrow_functions#cannot_be_used_as_methods"
+    ]
+  },
+  {
+    "id": "javascript-004",
+    "difficulty": "medium",
+    "topic": "Hoisting & the temporal dead zone",
+    "kind": "output",
+    "question": "What happens when `test()` runs?",
+    "snippets": [
+      {
+        "lang": "js",
+        "code": "function test() {\n  console.log(typeof a);\n  console.log(typeof b);\n  var a = 1;\n  let b = 2;\n}\n\ntest();"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "It logs `\"undefined\"`, then throws a ReferenceError"
+      },
+      {
+        "id": "b",
+        "text": "It logs `\"undefined\"` twice",
+        "why": "`typeof` is safe for *undeclared* variables, but `b` is declared with `let`. Until its declaration runs, it's in the temporal dead zone, and any access, even `typeof`, throws."
+      },
+      {
+        "id": "c",
+        "text": "It throws a ReferenceError at the first `console.log`",
+        "why": "`var a` is hoisted and initialized to `undefined` when the function starts, so reading it early is fine."
+      },
+      {
+        "id": "d",
+        "text": "It logs `\"number\"` twice",
+        "why": "Only declarations are hoisted, not assignments. Even `var a` is `undefined` until the `a = 1` line runs."
+      }
+    ],
+    "answer": "a",
+    "explanation": "Both declarations are hoisted, but differently:\n\n- `var a` is created **and initialized to `undefined`** when the function starts. `typeof a` → `\"undefined\"`.\n- `let b` is created but left **uninitialized** until its declaration line runs. The span before that is the temporal dead zone (TDZ). Reading `b` there, even with `typeof`, throws `ReferenceError: Cannot access 'b' before initialization`.",
+    "references": [
+      "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/let#temporal_dead_zone_tdz",
+      "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/typeof#temporal_dead_zone_errors"
+    ]
+  },
+  {
+    "id": "javascript-005",
+    "difficulty": "hard",
+    "topic": "Loose equality and coercion",
+    "kind": "misconception",
+    "question": "Which of these expressions evaluates to `true`?",
+    "options": [
+      {
+        "id": "a",
+        "text": "`null == 0`",
+        "why": "`==` has a special rule for `null`: it's only loosely equal to `null` and `undefined`, with no number conversion. (Confusingly, `null >= 0` is `true`, because relational operators *do* convert `null` to `0`.)"
+      },
+      {
+        "id": "b",
+        "text": "`NaN === NaN`",
+        "why": "`NaN` is the only value that isn't equal to itself. Use `Number.isNaN(x)` or `Object.is(x, NaN)` to test for it."
+      },
+      {
+        "id": "c",
+        "text": "`[0] == ![0]`"
+      },
+      {
+        "id": "d",
+        "text": "`Object.is(0, -0)`",
+        "why": "`Object.is` distinguishes `+0` from `-0` (and treats `NaN` as equal to itself). `0 === -0` is `true`, but `Object.is(0, -0)` is `false`."
+      }
+    ],
+    "answer": "c",
+    "explanation": "It looks like a value can't equal its own negation, but `==` converts both sides step by step:\n\n1. `![0]`: every object is truthy (even an array holding `0`), so `![0]` is `false`. Now we have `[0] == false`.\n2. A boolean operand is converted to a number: `false` → `0`. Now `[0] == 0`.\n3. An object compared to a primitive goes through ToPrimitive: `[0].valueOf()` returns the array itself (not a primitive), so `[0].toString()` is used, giving `\"0\"`. Now `\"0\" == 0`.\n4. A string compared to a number is converted to a number: `Number(\"0\")` is `0`. `0 == 0` → `true`.\n\nThe famous `[] == ![]` is `true` for the same reason (`[]` becomes `\"\"`, then `0`).",
+    "references": [
+      "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Equality",
+      "https://tc39.es/ecma262/#sec-islooselyequal"
+    ]
+  },
+  {
+    "id": "javascript-006",
+    "difficulty": "medium",
+    "topic": "Closures: factory with shared scope",
+    "kind": "output",
+    "question": "What does this log?",
+    "snippets": [
+      {
+        "lang": "js",
+        "code": "function makeCounter() {\n  let count = 0;\n  return {\n    inc: () => ++count,\n    get: () => count,\n  };\n}\n\nconst a = makeCounter();\nconst b = makeCounter();\n\na.inc();\na.inc();\nb.inc();\n\nconst { inc } = a;\ninc();\n\nconsole.log(a.get(), b.get());"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "`3 1`"
+      },
+      {
+        "id": "b",
+        "text": "`2 1`",
+        "why": "Tempting if you think pulling `inc` off the object \"detaches\" it, the way a `this`-based method loses its object when called on its own. But `inc` never uses `this`: it reads `count` from the scope it was created in. The destructured `inc` is the same function as `a.inc`, so calling it increments `a`'s `count` to 3."
+      },
+      {
+        "id": "c",
+        "text": "`4 4`",
+        "why": "This treats `count` like one module-level variable shared by every counter. But `let count` is declared inside `makeCounter`, and each call to `makeCounter` creates a new scope with its own `count`. So `a` and `b` are independent: `a` was incremented 3 times, `b` once."
+      },
+      {
+        "id": "d",
+        "text": "`1 1`",
+        "why": "This assumes each `inc()`/`get()` call starts from a fresh `count = 0`, as if the factory re-ran. The factory body runs only when `makeCounter()` is called (twice here); `inc` and `get` just read and update the `count` that already exists in that call's scope, so it keeps its value between calls."
+      }
+    ],
+    "answer": "a",
+    "explanation": "Every call to `makeCounter()` creates a new scope (lexical environment) holding its own `count`. The two arrow functions returned from that call both close over that **same** `count`.\n\n- `a`'s `count`: `a.inc()` twice → 2, then the destructured `inc()` → 3.\n- `b`'s `count`: `b.inc()` once → 1. It's a separate variable from `a`'s.\n\n`const { inc } = a` just copies a reference to the function stored in `a.inc` (`inc === a.inc` is `true`). Because the function finds `count` through its closure, not through `this`, it still updates `a`'s counter when called on its own. So `a.get()` returns `3` and `b.get()` returns `1`.\n\nContrast: a method written as `inc() { return ++this.count; }` *would* break when destructured, because `this` depends on how the function is called. Closure-based state doesn't have that problem.",
+    "references": [
+      "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Closures",
+      "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Destructuring"
+    ]
+  },
+  {
+    "id": "javascript-007",
+    "difficulty": "expert",
+    "topic": "Closures: per-iteration let bindings",
+    "kind": "output",
+    "question": "What does this log? (Any modern engine; the result is the same in a module or a classic script.)",
+    "snippets": [
+      {
+        "lang": "js",
+        "code": "const fns = [];\n\nfor (let i = 0; i < 3; i++) {\n  fns.push(() => i);\n  i++;\n}\n\nconsole.log(fns.map((f) => f()));"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "`[0, 2]`",
+        "why": "Tempting if you think a closure snapshots the value of `i` at the moment `push` runs. Closures capture the binding, not a value: the `i++` in the body runs after the push but on the same per-iteration binding, so each function sees the incremented value (1, then 3)."
+      },
+      {
+        "id": "b",
+        "text": "`[4, 4]`",
+        "why": "That is the `var` result: with one shared `i`, it goes 0 → 1 (body) → 2 (loop head) → 3 (body) → 4 (loop head), and both closures read the final 4. But `for (let ...)` gives each iteration its own copy of `i`, so the closures don't share one."
+      },
+      {
+        "id": "c",
+        "text": "`[2, 4]`",
+        "why": "This assumes the loop-head `i++` runs on the old iteration's binding and only then gets copied forward. The spec does it the other way around: it creates the next iteration's binding (copying the current value) first, then runs the increment on that new copy, so the previous closure's binding is left alone."
+      },
+      {
+        "id": "d",
+        "text": "`[1, 3]`"
+      }
+    ],
+    "answer": "d",
+    "explanation": "A `for (let i = ...)` loop gives every iteration its own binding of `i`. After each body run, the engine creates a fresh binding for the next iteration, copies the **current** value of `i` into it, and only then runs the increment expression on that new binding (`CreatePerIterationEnvironment` in the spec's `ForBodyEvaluation`).\n\nTracing it:\n\n- Iteration 1: `i` is 0. The closure captures this binding. The body's `i++` makes it 1. A new binding is created with value 1; the head's `i++` makes the new one 2. The first binding stays 1.\n- Iteration 2: `i` is 2, `2 < 3` passes. The second closure captures this binding; the body's `i++` makes it 3. The next copy gets 3, the head's `i++` makes it 4, and `4 < 3` fails, so the loop ends.\n\nOnly two functions were pushed, and their bindings hold 1 and 3, so the output is `[1, 3]`.\n\nThe takeaway: closures capture variables, not values. A mutation of `i` inside the body is visible to that iteration's closure, but the loop-head increment always lands on the next iteration's copy.",
+    "references": [
+      "https://tc39.es/ecma262/#sec-forbodyevaluation",
+      "https://tc39.es/ecma262/#sec-createperiterationenvironment",
+      "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/for#lexical_declarations_in_the_initialization_block"
+    ]
+  },
+  {
+    "id": "javascript-008",
+    "difficulty": "medium",
+    "topic": "Closures: let outside a while loop",
+    "kind": "debug",
+    "question": "A teammate heard that switching `var` to `let` fixes closures in loops, so they changed `var i = 0` to `let i = 0` below. Run in Node or a browser, it still logs `3`, `3`, `3` instead of `0`, `1`, `2`. Why?",
+    "snippets": [
+      {
+        "lang": "js",
+        "code": "function scheduleLogs() {\n  let i = 0; // was: var i = 0;\n  while (i < 3) {\n    setTimeout(() => console.log(i), 0);\n    i++;\n  }\n}\n\nscheduleLogs();"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "`setTimeout` callbacks always run after the loop has finished, so no closure created in a loop can ever log 0, 1, 2.",
+        "why": "Tempting because the callbacks really do run after the loop ends. But timing isn't the problem: with `for (let i = 0; i < 3; i++)` the callbacks run just as late and still log 0, 1, 2, because each one closed over its own per-iteration `i`."
+      },
+      {
+        "id": "b",
+        "text": "`let` only creates a fresh binding per iteration in strict mode; this code isn't in strict mode, so `let i` falls back to `var`-like sharing.",
+        "why": "Tempting because several older JS quirks really do depend on strict mode. This isn't one of them: `let` is block-scoped, and `for (let ...)` creates per-iteration bindings, in sloppy and strict code alike. Adding `\"use strict\"` here changes nothing, because the real problem is that `let i` is declared once, outside the loop, so there is only one binding to share."
+      },
+      {
+        "id": "c",
+        "text": "`i` is declared once, outside the loop, so all three callbacks close over the same single binding; only a `for (let ...)` loop head creates a fresh binding for each iteration."
+      },
+      {
+        "id": "d",
+        "text": "Arrow functions capture `i` by reference; a regular `function () { console.log(i); }` callback would capture its value and log 0, 1, 2.",
+        "why": "JavaScript closures never copy values, whatever the function syntax. Arrow and regular functions both keep a reference to the `i` binding, so the `function` version logs 3, 3, 3 as well. Arrows differ in `this`/`arguments`, not in how they capture variables."
+      }
+    ],
+    "answer": "c",
+    "explanation": "Closures capture **bindings** (variables), not the values they held at creation time. What makes `let` \"fix\" loops is not the keyword itself but where it is declared:\n\n- `for (let i = 0; ...; i++)` is special: the loop creates a new `i` binding for every iteration and copies the current value into it, so each callback gets its own `i`.\n- Here `let i` runs once, before the `while`. There is exactly one `i`, and all three callbacks share it. By the time the timers fire, the loop has incremented it to `3`.\n\nThe same applies to a `for` loop whose head doesn't declare the variable (`let i; for (i = 0; i < 3; i++)`): still one shared binding.\n\nFix: give each iteration its own block-scoped copy, or use a `for (let ...)` head:\n\n```js\nwhile (i < 3) {\n  const n = i; // new binding each time the body runs\n  setTimeout(() => console.log(n), 0);\n  i++;\n}\n```",
+    "references": [
+      "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Closures#creating_closures_in_loops_a_common_mistake",
+      "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/for#lexical_declarations_in_the_initialization_block",
+      "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/let"
+    ]
+  },
+  {
+    "id": "javascript-009",
+    "difficulty": "hard",
+    "topic": "Closures: leaking private state",
+    "kind": "debug",
+    "question": "This stack keeps its data \"private\" in a closure. In this minimal reproduction (the whole program), the history renders correctly, but afterwards the last line logs `0` instead of `2`. What is the root cause?",
+    "snippets": [
+      {
+        "lang": "js",
+        "code": "function createStack() {\n  const items = [];\n  return {\n    push(x) { items.push(x); },\n    toArray() { return items; },\n    size() { return items.length; },\n  };\n}\n\nfunction renderHistory(stack) {\n  const list = stack.toArray();\n  console.log(list.join(\" > \"));\n  list.length = 0; // done with the local list\n}\n\nconst undo = createStack();\nundo.push(\"type A\");\nundo.push(\"type B\");\n\nrenderHistory(undo);\nconsole.log(undo.size()); // expected 2, logs 0"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "The `items` array is created once and shared by every stack that `createStack()` returns, so the stack's state can be reset from outside it.",
+        "why": "Tempting because all the methods seem to point at \"the\" `items` variable. But every call to `createStack()` runs the function body again, creating a new environment with its own `items` array. Two stacks made by the factory are fully independent, and in this program there is only one stack anyway."
+      },
+      {
+        "id": "b",
+        "text": "`toArray()` returns a reference to the same array that `items` holds, so `list.length = 0` empties the stack's own array."
+      },
+      {
+        "id": "c",
+        "text": "`const items` should make the array read-only, but `const` is only enforced in strict mode, so in a non-strict script the change to the array slips through.",
+        "why": "Tempting because `const` sounds like \"constant value\". But `const` only stops the `items` binding from being reassigned, and it does so in every mode: `items = []` throws a `TypeError` in sloppy scripts too. It never made the array's contents or its `length` read-only, so mutating the array is allowed in strict and non-strict code alike."
+      },
+      {
+        "id": "d",
+        "text": "Arrays are returned by value, so `list` is a separate copy; the `0` comes from a stale closure, because `size()` captured `items` before anything was pushed.",
+        "why": "Both halves are misconceptions. Objects (arrays included) are returned as references to the same object: `stack.toArray() === stack.toArray()` is `true`. And closures capture variables, not snapshots of their values, so `size()` reads the current array every time it runs; without the `list.length = 0` line it logs `2`."
+      }
+    ],
+    "answer": "b",
+    "explanation": "A closure hides the **name** `items`: no outside code can write `items` or reassign it. It does not hide the **array object**. `toArray()` hands the caller a reference to that same array, so `list` and the stack's `items` are two names for one object. Setting `list.length = 0` truncates that shared array, and `size()` then reports `0`.\n\n`const` doesn't help here: it prevents reassigning the binding (`items = []`), not mutating the array it points to.\n\nThe fix is to stop leaking the internal array. Return a copy:\n\n```js\ntoArray() { return [...items]; } // or items.slice()\n```\n\nNow callers can do whatever they like with their copy and the stack keeps its 2 items. If you want callers to get an error (in strict code) when they try to change the result, return a frozen copy with `Object.freeze([...items])`. Don't freeze `items` itself: the stack's own `push` would then throw.",
+    "references": [
+      "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Closures",
+      "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/const",
+      "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/length"
+    ]
+  },
+  {
+    "id": "javascript-010",
+    "difficulty": "hard",
+    "topic": "Event loop: interleaving promise chains",
+    "kind": "output",
+    "question": "This is the entire script, and nothing else is queued. In what order are the labels logged?",
+    "snippets": [
+      {
+        "lang": "js",
+        "code": "Promise.resolve()\n  .then(() => console.log(\"a1\"))\n  .then(() => console.log(\"a2\"))\n  .then(() => console.log(\"a3\"));\n\nPromise.resolve()\n  .then(() => console.log(\"b1\"))\n  .then(() => console.log(\"b2\"));"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "a1 a2 a3 b1 b2",
+        "why": "Tempting because chain A is registered first, so it looks like it should run to completion. But only `a1` is queued during the synchronous run; `a2` isn't queued until `a1` has run, and by then `b1` is already waiting ahead of it in the microtask queue."
+      },
+      {
+        "id": "b",
+        "text": "a1 b1 a2 b2 a3"
+      },
+      {
+        "id": "c",
+        "text": "b1 b2 a1 a2 a3",
+        "why": "Tempting if you think the shorter chain gets finished first. The microtask queue is first-in, first-out and doesn't care how long a chain is; `a1` was queued before `b1`, so `a1` runs first."
+      },
+      {
+        "id": "d",
+        "text": "a1 a2 b1 b2 a3",
+        "why": "Tempting if you picture each chain advancing two links per turn. Each `.then` callback is its own microtask; when `a1` finishes, `a2` is queued *behind* `b1`, so `b1` runs before `a2`."
+      }
+    ],
+    "answer": "b",
+    "explanation": "A `.then` callback is queued as a microtask only when the promise it's attached to settles. Every `.then` returns a **new** promise, and that promise settles only after its callback has run.\n\n- Synchronous run: `Promise.resolve()` is already fulfilled, so the first `.then` of each chain queues its callback right away. The later `.then`s are attached to promises that are still pending, so nothing is queued for them yet. Queue: `a1, b1`.\n- `a1` runs. The promise returned by its `.then` fulfills, which queues `a2`. Queue: `b1, a2`.\n- `b1` runs and queues `b2`. Queue: `a2, b2`.\n- `a2` runs and queues `a3`. Queue: `b2, a3`.\n- `b2` runs (chain B is done), then `a3`.\n\nSo independent chains advance one link at a time and interleave: **a1 b1 a2 b2 a3**. All of this happens in one drain of the microtask queue, but the queue is strictly FIFO, and each link joins the back of the queue only when its predecessor finishes.",
+    "references": [
+      "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise/then",
+      "https://developer.mozilla.org/en-US/docs/Web/API/HTML_DOM_API/Microtask_guide",
+      "https://tc39.es/ecma262/#sec-performpromisethen"
+    ]
+  },
+  {
+    "id": "javascript-011",
+    "difficulty": "medium",
+    "topic": "Event loop: setTimeout inside then",
+    "kind": "output",
+    "question": "This code runs as a script in a modern browser or in Node.js. In what order are the labels logged?",
+    "snippets": [
+      {
+        "lang": "js",
+        "code": "setTimeout(() => console.log('t1'), 0);\n\nPromise.resolve().then(() => {\n  console.log('p1');\n  setTimeout(() => console.log('t2'), 0);\n  queueMicrotask(() => console.log('m'));\n});\n\nsetTimeout(() => console.log('t3'), 0);\n\nconsole.log('sync');"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "sync p1 m t1 t3 t2"
+      },
+      {
+        "id": "b",
+        "text": "sync p1 t2 m t1 t3",
+        "why": "Tempting if you think a timer created inside a promise callback gets priority, or runs right after the callback. `setTimeout` never runs its callback synchronously, and a timer task can't run until the microtask queue is empty, so `m` must come before `t2`. `t2` is also scheduled after `t1` and `t3`, so it can't run before them."
+      },
+      {
+        "id": "c",
+        "text": "sync p1 t1 t3 t2 m",
+        "why": "Tempting if you think a microtask queued from inside another microtask has to wait for the next turn of the event loop. It doesn't: the microtask queue is drained until it is empty, including microtasks added while draining, so `m` runs right after `p1` and before any timer."
+      },
+      {
+        "id": "d",
+        "text": "sync t1 p1 m t3 t2",
+        "why": "Tempting because `t1` was scheduled first with a 0 ms delay, so it looks \"ready\" before the promise callback. But a timer callback is a separate task. When the script's synchronous code finishes, all pending microtasks (`p1`, then `m`) run before the event loop starts any timer task."
+      }
+    ],
+    "answer": "a",
+    "explanation": "Walk through it in three phases.\n\n1. **Synchronous code.** `t1` is scheduled, the `.then` callback is queued as a microtask, `t3` is scheduled, and **sync** is logged. Timer order so far: `t1`, `t3`.\n2. **Microtask checkpoint.** Before any timer can run, the microtask queue is drained. The `.then` callback logs **p1**, schedules `t2` (now third in line, behind `t1` and `t3`), and queues `m`. Draining continues until the queue is empty, so **m** runs next, still before any timer.\n3. **Timer tasks.** Timers with the same delay fire in the order they were scheduled: **t1**, **t3**, then **t2**.\n\nResult: `sync p1 m t1 t3 t2`.\n\nThe key idea: where a `setTimeout` call sits in the source doesn't decide its turn. What matters is *when the call actually runs*. `t2` is written above `t3`, but it is only scheduled once the promise callback runs, which is after the synchronous code has already scheduled `t3`.",
+    "references": [
+      "https://developer.mozilla.org/en-US/docs/Web/API/HTML_DOM_API/Microtask_guide",
+      "https://developer.mozilla.org/en-US/docs/Web/API/Window/setTimeout",
+      "https://html.spec.whatwg.org/multipage/timers-and-user-prompts.html#timers"
+    ]
+  },
+  {
+    "id": "javascript-012",
+    "difficulty": "hard",
+    "topic": "Event loop: microtasks between timers",
+    "kind": "output",
+    "question": "This is the entire script, run in a modern browser or a current Node.js version, and nothing else is queued. In what order are the labels logged?",
+    "snippets": [
+      {
+        "lang": "js",
+        "code": "setTimeout(() => {\n  console.log('t1');\n  Promise.resolve()\n    .then(() => console.log('p1'))\n    .then(() => console.log('p2'));\n}, 0);\n\nsetTimeout(() => console.log('t2'), 0);"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "t1 t2 p1 p2",
+        "why": "Tempting if you picture both 0 ms timers as one batch that runs before any promise work. Node.js versions before 11 actually behaved like that, but browsers and current Node.js treat each timer callback as its own task and drain the microtask queue after each one, so p1 and p2 run before t2."
+      },
+      {
+        "id": "b",
+        "text": "t1 p1 t2 p2",
+        "why": "Tempting if you think the event loop runs one microtask per task. It doesn't: it keeps running microtasks until the queue is empty, including microtasks queued while it is draining. p2 is queued when p1's callback finishes, so it runs in the same drain, before t2."
+      },
+      {
+        "id": "c",
+        "text": "p1 p2 t1 t2",
+        "why": "Tempting if you think promise callbacks always run before timers. The promise chain is created inside the first timer callback, so nothing is queued for it until that callback runs and logs t1. Microtasks run after the current task, not before code that hasn't executed yet."
+      },
+      {
+        "id": "d",
+        "text": "t1 p1 p2 t2"
+      }
+    ],
+    "answer": "d",
+    "explanation": "Each timer callback is a separate **task**. After a task finishes (when the call stack is empty), the event loop drains the **microtask queue completely** before it picks the next task, and microtasks queued during that drain are run in the same drain.\n\n- The script queues two timers; the first callback runs first and logs **t1**.\n- In that callback, `Promise.resolve()` is already fulfilled, so the first `.then` callback (p1) is queued as a microtask. The second `.then` is attached to a promise that is still pending, so p2 isn't queued yet.\n- The first timer callback returns. The microtask queue is drained: **p1** runs, its `.then` promise fulfills, which queues p2; the queue isn't empty yet, so **p2** runs too.\n- Only now does the next task run: **t2**.\n\nResult: t1 p1 p2 t2. A 0 ms delay doesn't merge timers into one step: every promise chain started inside a timer callback finishes before the next timer callback starts (unless one of its links waits on something outside the microtask queue, such as another timer or I/O).",
+    "references": [
+      "https://developer.mozilla.org/en-US/docs/Web/API/HTML_DOM_API/Microtask_guide",
+      "https://html.spec.whatwg.org/multipage/webappapis.html#perform-a-microtask-checkpoint",
+      "https://nodejs.org/en/learn/asynchronous-work/event-loop-timers-and-nexttick"
+    ]
+  },
+  {
+    "id": "javascript-013",
+    "difficulty": "expert",
+    "topic": "Event loop: await a thenable",
+    "kind": "output",
+    "question": "This is the entire program (same result as an ES module or a classic script, in Node.js or a modern browser). `thenable` is a plain object, not a `Promise`. In what order are the values logged?",
+    "snippets": [
+      {
+        "lang": "js",
+        "code": "const thenable = {\n  then(resolve) {\n    resolve('T');\n  },\n};\n\n(async () => {\n  console.log(await thenable);\n})();\n\n(async () => {\n  console.log(await Promise.resolve('P'));\n})();\n\nPromise.resolve()\n  .then(() => console.log(1))\n  .then(() => console.log(2))\n  .then(() => console.log(3));\n\nconsole.log('sync');"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "sync T P 1 2 3",
+        "why": "Tempting if you assume `await` calls `thenable.then` right away, during the synchronous run, so the thenable is already settled before anything else is queued. It isn't: the spec defers that `then` call to a microtask (a NewPromiseResolveThenableJob), and only when that job runs and `resolve('T')` is called does the async function's continuation get queued, behind P and 1."
+      },
+      {
+        "id": "b",
+        "text": "sync P T 1 2 3",
+        "why": "Tempting if you think every `await` costs exactly one microtask, so both async functions resume before the `.then` chain. That holds for a native promise like `Promise.resolve('P')`, but awaiting a non-promise thenable takes an extra tick: one microtask to call its `then`, and another for the continuation. By then 1 has already been queued, so it runs before T."
+      },
+      {
+        "id": "c",
+        "text": "sync P 1 T 2 3"
+      },
+      {
+        "id": "d",
+        "text": "sync 1 2 3 T P",
+        "why": "Tempting if you think `await` (or a thenable that isn't a real promise) defers to a later task like `setTimeout`. Nothing here creates a task: the awaits, the thenable's `then` call, and the `.then` callbacks are all microtasks, so they interleave in one microtask checkpoint. And P doesn't wait for the whole chain; its continuation is queued during the synchronous run, before 1."
+      }
+    ],
+    "answer": "c",
+    "explanation": "`await v` first converts `v` with `PromiseResolve`:\n\n- A **native promise** is used as-is, so the continuation is attached to it directly. `Promise.resolve('P')` is already fulfilled, so the continuation is queued as one microtask.\n- A **non-promise thenable** is wrapped in a new promise. Resolving that promise with a thenable does **not** call `then` synchronously: it queues a job (NewPromiseResolveThenableJob) that calls `thenable.then(resolve, reject)` later. Only when `resolve('T')` runs inside that job does the wrapper fulfil and queue the continuation. That's one extra microtask.\n\nStep by step:\n\n1. Synchronous run: the first IIFE queues the job that will call `thenable.then`; the second IIFE queues its continuation (P); the chain queues the callback that logs 1. Then `sync` is logged. Queue: [call then, P, 1].\n2. The job calls `then`, which calls `resolve('T')` and queues the first IIFE's continuation. Queue: [P, 1, T].\n3. **P** is logged. **1** is logged, which queues 2. Queue: [T, 2].\n4. **T**, then **2** (queues 3), then **3**.\n\nResult: sync P 1 T 2 3.\n\nA related delay shows up when you `return` a thenable from a `.then` callback or pass one to `resolve()`: adopting any thenable's state, native promises included, goes through that same deferred job.",
+    "references": [
+      "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/await",
+      "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise#thenables",
+      "https://tc39.es/ecma262/#sec-newpromiseresolvethenablejob"
+    ]
+  },
+  {
+    "id": "javascript-014",
+    "difficulty": "medium",
+    "topic": "this: detached method as callback",
+    "kind": "debug",
+    "question": "This code runs as a classic (non-module) script in a modern browser or in Node.js. Calling `cart.addAll(...)` throws the error shown in the comment. What is the cause?",
+    "snippets": [
+      {
+        "lang": "js",
+        "code": "class Cart {\n  items = [];\n\n  addAll(list) {\n    list.forEach(this.add);\n  }\n\n  add(item) {\n    this.items.push(item);\n  }\n}\n\nconst cart = new Cart();\ncart.addAll(['apple', 'pear']);\n// TypeError: Cannot read properties of undefined (reading 'items')"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "`forEach` calls `add` with `this` set to the array it was called on (`list`), and arrays have no `items` property",
+        "why": "Tempting because `forEach` itself is called as `list.forEach(...)`, so inside `forEach` `this` is `list`. But `forEach` does not pass that array on as the callback's `this`: it uses its optional second argument (`thisArg`), or `undefined` if there isn't one. If `this` really were `list`, `this.items` would be `undefined` and the error would be about reading `'push'`, not `'items'`."
+      },
+      {
+        "id": "b",
+        "text": "`items` is a class field, and class fields can't be seen from prototype methods like `add`; it must be assigned in the constructor instead",
+        "why": "Tempting because fields and methods are declared differently: methods are on `Cart.prototype`, fields are not. But a field becomes an own property of each instance when it is constructed, so any method called with `this` set to the instance can read `this.items`. Moving it into the constructor changes nothing here, because the real problem is that `this` isn't the instance."
+      },
+      {
+        "id": "c",
+        "text": "`this.add` passes only the function, not the instance; `forEach` calls it with `this` set to `undefined`, because no `thisArg` is given and code inside a class is always strict mode"
+      },
+      {
+        "id": "d",
+        "text": "`add` is called as a plain function, so `this` falls back to `globalThis`, and there is no global variable named `items`",
+        "why": "Tempting because in sloppy-mode code a plain function call does get `globalThis` as `this`, and this script isn't a module. But all code inside a class body is strict, so `this` stays `undefined` (even defining a global `items` array wouldn't help). The message confirms it: it fails reading `'items'` of `undefined`, which means `this` itself is `undefined`."
+      }
+    ],
+    "answer": "c",
+    "explanation": "`this` inside a regular method is decided by **how the function is called**, not where it was defined.\n\n- `this.add` is just a property read: it gives `forEach` the function object, with no link back to `cart`.\n- `forEach` calls the callback with `this` set to its second argument (`thisArg`). None was passed, so `this` is `undefined`.\n- Class bodies are always strict mode, even in a classic script, so `undefined` is not replaced with `globalThis`. `this.items` then throws a `TypeError`.\n\nAny of these fixes keeps `this` pointing at the instance:\n\n```js\nlist.forEach(item => this.add(item)); // arrow uses addAll's this\nlist.forEach(this.add, this);         // pass thisArg\nlist.forEach(this.add.bind(this));    // bind it\n// or define add as an arrow-function field:\n// add = (item) => { this.items.push(item); };\n```",
+    "references": [
+      "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/this#callbacks",
+      "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/forEach",
+      "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Classes#strict_mode",
+      "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Classes/Public_class_fields"
+    ]
+  },
+  {
+    "id": "javascript-015",
+    "difficulty": "hard",
+    "kind": "output",
+    "topic": "this: bind is permanent",
+    "question": "What does this log? (Any modern engine; the output is the same in an ES module or a classic script.)",
+    "snippets": [
+      {
+        "lang": "js",
+        "code": "function f() {\n  return this.n;\n}\n\nconst g = f.bind({ n: 1 }).bind({ n: 2 });\nconst o = { n: 4, g };\n\nconsole.log(g(), g.call({ n: 3 }), o.g());"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "`2 3 4`",
+        "why": "Tempting if you think whichever `this` was supplied most recently wins: the latest `bind`, then the explicit `call`, then the object the method was called on. But a bound function ignores the `this` it is called with, so neither `call` nor `o.g()` gets through, and the second `bind` only wraps a function that already ignores it."
+      },
+      {
+        "id": "b",
+        "text": "`1 1 1`"
+      },
+      {
+        "id": "c",
+        "text": "`2 2 2`",
+        "why": "Tempting if you think the second `bind` replaces the first. It doesn't: `.bind({ n: 2 })` creates a new bound function whose target is the first bound function. Calling it passes `{ n: 2 }` as `this` to that inner bound function, which ignores it and calls `f` with `{ n: 1 }`."
+      },
+      {
+        "id": "d",
+        "text": "`1 3 4`",
+        "why": "Tempting if you think `bind` only sets a default `this` that `call` or a method call can override. A bound function always calls its target with the stored bound `this` and ignores the `this` it was called with, so `g.call({ n: 3 })` and `o.g()` both still return 1."
+      }
+    ],
+    "answer": "b",
+    "explanation": "`bind` returns a **bound function exotic object** that stores its target function and a bound `this`. When it is called, it calls the target with the stored `this` and ignores whatever `this` the call itself supplied.\n\n- `f.bind({ n: 1 })` makes a bound function (call it `b1`) whose target is `f` and whose bound `this` is `{ n: 1 }`.\n- `b1.bind({ n: 2 })` makes another bound function `g` whose target is `b1`. Calling `g` calls `b1` with `this = { n: 2 }`, but `b1` ignores that and calls `f` with `{ n: 1 }`. So `g()` returns 1.\n- `g.call({ n: 3 })`: the `{ n: 3 }` is ignored by `g` for the same reason, so it also returns 1. `apply` and `Reflect.apply` behave the same.\n- `o.g()`: storing a bound function as a property and calling it as a method supplies `o` as `this`, which is again ignored, so it returns 1.\n\nThe innermost (first) `bind` wins, and later `bind`/`call`/`apply`/method calls can't change it. The one exception is calling a bound function with `new`: then the bound `this` is ignored and a newly created object is used instead. Arrow functions are a different case: they have no own `this` at all, so binding them never changes `this`.",
+    "references": [
+      "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Function/bind",
+      "https://tc39.es/ecma262/#sec-bound-function-exotic-objects-call-thisargument-argumentslist"
+    ]
+  },
+  {
+    "id": "javascript-016",
+    "difficulty": "hard",
+    "topic": "this: arrow functions in class fields",
+    "kind": "output",
+    "question": "What does this log? (Same result as an ES module or a classic script, in Node.js or a modern browser.)",
+    "snippets": [
+      {
+        "lang": "js",
+        "code": "class Counter {\n  count = 0;\n  inc = () => ++this.count;\n}\n\nconst c = new Counter();\nconst other = { count: 100, inc: c.inc };\n\nother.inc();\nc.inc.call({ count: 50 });\n\nconsole.log(c.count, other.count);"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "`2 100`"
+      },
+      {
+        "id": "b",
+        "text": "`0 101`",
+        "why": "`other.inc()` looks like a method call, and for a regular function that would make `this` equal to `other`. But `inc` is an arrow function: it has no `this` of its own, so the receiver is ignored and `++this.count` still targets `c`. (This answer would also need `.call` to redirect the arrow, which it can't.)"
+      },
+      {
+        "id": "c",
+        "text": "`1 100`",
+        "why": "Tempting if you know the method-call receiver is ignored but believe `.call` can still force a `this`. For arrow functions, `.call`, `.apply` and `.bind` can pass arguments but their `thisArg` is ignored, so the second call also increments `c.count`."
+      },
+      {
+        "id": "d",
+        "text": "A `TypeError` is thrown at `other.inc()`",
+        "why": "Tempting if you remember that class code is strict and that a class method pulled off its instance loses `this`, so `this.count` would throw. But that happens when a regular method is called with no receiver (e.g. `const f = c.method; f()`). Here `inc` is an arrow created in the constructor, so `this` is permanently the instance; nothing is `undefined`, and nothing throws."
+      }
+    ],
+    "answer": "a",
+    "explanation": "A class field initializer runs during construction, once per instance, with `this` set to the new instance. So `inc = () => ++this.count` creates a **separate arrow function for each instance**, stored as an **own property** (not on `Counter.prototype`), and that arrow captures the instance as its lexical `this`.\n\nAn arrow function's `this` can't be changed by how it's called:\n\n- `other.inc()`: `other.inc` is the same function object as `c.inc`. Calling it through `other` doesn't matter: `this` is still `c`, so `c.count` becomes `1` and `other.count` stays `100`.\n- `c.inc.call({ count: 50 })`: the `thisArg` passed to `.call` is ignored for arrow functions, so `c.count` becomes `2`. The `{ count: 50 }` object is never touched.\n\nResult: `2 100`.\n\nThis is why arrow-function class fields are popular for callbacks (event handlers, `setTimeout`): they can be passed around without `.bind`. The trade-off is that each instance gets its own copy of the function, and it can't be shared through the prototype.",
+    "references": [
+      "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Classes/Public_class_fields",
+      "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Functions/Arrow_functions#cannot_be_used_as_methods",
+      "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/this#class_context"
+    ]
+  },
+  {
+    "id": "javascript-017",
+    "difficulty": "expert",
+    "topic": "this: new with a bound function",
+    "kind": "output",
+    "question": "This code runs in Node.js or a browser console (module or classic script gives the same result). What does it log?",
+    "snippets": [
+      {
+        "lang": "js",
+        "code": "function Price(currency, amount) {\n  this.currency = currency;\n  this.amount = amount;\n  this.label = this.label;\n}\n\nconst defaults = { label: 'default' };\nconst Euro = Price.bind(defaults, 'EUR');\nconst p = new Euro(20);\n\nconsole.log(p.currency, p.amount, p.label, p instanceof Price);"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "`EUR 20 default true`",
+        "why": "Tempting because a `bind`-ed `this` normally can't be overridden: `call`, `apply` and method calls all keep it. And calling `Euro(5)` **without** `new` really does run `Price` with `this` set to `defaults`. But `new` is the one exception: constructing a bound function ignores the bound `this` and constructs the target (`Price`) with a brand-new object. That object has no `label`, so `this.label` reads `undefined`, and `defaults` is never touched."
+      },
+      {
+        "id": "b",
+        "text": "`20 undefined undefined true`",
+        "why": "Tempting if you think `new` throws away everything `bind` set up. It only ignores the bound `this`. The bound arguments are still prepended, so `Price` receives `('EUR', 20)`: `currency` is `'EUR'` and `amount` is `20`."
+      },
+      {
+        "id": "c",
+        "text": "`EUR 20 undefined false`",
+        "why": "Tempting if you think `p` is an instance of the bound function `Euro` rather than of `Price`. But a bound function has no `prototype` property of its own, and constructing it constructs the target: the new object's prototype is `Price.prototype`. So `p instanceof Price` is `true` (and `p instanceof Euro` is also `true`, because `instanceof` with a bound function on the right checks against its target)."
+      },
+      {
+        "id": "d",
+        "text": "`EUR 20 undefined true`"
+      }
+    ],
+    "answer": "d",
+    "explanation": "When a bound function is called with `new`, it acts as though the **target** function had been called with `new` instead:\n\n- **The bound `this` is ignored.** Construction creates its own `this`: a fresh object whose prototype is `Price.prototype`. `defaults` is not used and not modified.\n- **The bound arguments are still prepended.** `new Euro(20)` calls `Price` with `('EUR', 20)`, so `currency` is `'EUR'` and `amount` is `20`.\n- **`this.label = this.label`** reads `label` from the fresh object. Neither it nor `Price.prototype` has one, so it reads `undefined`, and `p` gets an own `label` property with the value `undefined`.\n- **`p instanceof Price` is `true`** because `p`'s prototype is `Price.prototype`. `p instanceof Euro` is `true` as well: a bound function has no `prototype` property, so `instanceof` uses its target's.\n\nCompare calling it without `new`, where the bound `this` does apply:\n\n```js\nEuro(5);               // returns undefined\nconsole.log(defaults); // { label: 'default', currency: 'EUR', amount: 5 }\n```\n\nSo `bind` locks `this` against every kind of call except construction with `new`.",
+    "references": [
+      "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Function/bind#bound_functions_used_as_constructors",
+      "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/new",
+      "https://tc39.es/ecma262/#sec-bound-function-exotic-objects-construct-argumentslist-newtarget"
+    ]
+  },
+  {
+    "id": "javascript-018",
+    "difficulty": "hard",
+    "topic": "Hoisting: class TDZ and shadowing",
+    "kind": "debug",
+    "question": "This is the entire program (same result as an ES module or a classic script, in Node.js or a modern browser). A refactor added the local `class Logger` at the bottom of `setup()`. Its author assumed `new Logger()` would keep using the top-level class, because the local one is only declared further down. What actually happens when the program runs?",
+    "snippets": [
+      {
+        "lang": "js",
+        "code": "class Logger {\n  log(msg) { console.log(`[app] ${msg}`); }\n}\n\nfunction setup() {\n  helper();\n  const logger = new Logger();\n  logger.log(\"ready\");\n\n  function helper() {\n    console.log(\"helper ok\");\n  }\n\n  // added during a refactor\n  class Logger {\n    log(msg) { console.log(`[setup] ${msg}`); }\n  }\n}\n\nsetup();"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "Nothing is logged: `helper()` throws, because a function declared below its call hasn't been defined yet when that line runs",
+        "why": "Tempting because function **expressions** do fail when called early: `var f = function () {}` throws a TypeError (`f` is still `undefined`), and a `let`/`const` binding throws a ReferenceError (TDZ). But `function helper() {}` is a function **declaration**: its binding is created and initialized with the function object when `setup` starts, so calling it on the first line works and logs `helper ok`."
+      },
+      {
+        "id": "b",
+        "text": "The program never starts: loading the file fails with a SyntaxError because `Logger` is declared twice",
+        "why": "Tempting because declaring the same class name twice **in the same scope** is an early SyntaxError (`Identifier 'Logger' has already been declared`). Here the two declarations live in different scopes: one at the top level, one inside `setup`'s body. An inner declaration may shadow an outer one, so the file parses fine and the error only appears at runtime, when `setup()` reaches `new Logger()`."
+      },
+      {
+        "id": "c",
+        "text": "It logs `helper ok`, then `[app] ready`: the local class isn't hoisted, so `new Logger()` still resolves to the top-level `Logger`",
+        "why": "This is the refactor author's assumption. Class declarations **are** hoisted: the inner `Logger` binding exists for the whole body of `setup` from the moment it starts, so the name never falls back to the outer class inside that function. It just isn't initialized yet, which is why the line throws instead of using either class."
+      },
+      {
+        "id": "d",
+        "text": "It logs `helper ok`, then throws a ReferenceError at `new Logger()`: the local `class Logger` shadows the top-level one throughout `setup`, and it's uninitialized until its declaration runs"
+      }
+    ],
+    "answer": "d",
+    "explanation": "When `setup()` is called, the engine creates bindings for **every** declaration in its body before running any of it:\n\n- `function helper` is created **and initialized** with the function object, so `helper()` on the first line works and logs `helper ok`.\n- `class Logger` is created but left **uninitialized**, exactly like `let`/`const`. From the start of `setup` until the `class Logger { ... }` line is evaluated, the name is in the temporal dead zone (TDZ).\n\nBecause the local binding exists for the whole function body, the identifier `Logger` inside `setup` always resolves to it, never to the top-level class. Reading it in the TDZ throws `ReferenceError: Cannot access 'Logger' before initialization` (V8's wording; other engines word it differently). The same happens with `typeof Logger` at that point.\n\nFixes: rename the local class (e.g. `SetupLogger`), move its declaration above the first use, or remove it if the top-level `Logger` was the one you wanted.",
+    "references": [
+      "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/class#description",
+      "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/let#temporal_dead_zone_tdz",
+      "https://developer.mozilla.org/en-US/docs/Glossary/Hoisting",
+      "https://tc39.es/ecma262/#sec-functiondeclarationinstantiation"
+    ]
+  },
+  {
+    "id": "javascript-019",
+    "difficulty": "hard",
+    "topic": "Hoisting: var and function same name",
+    "kind": "output",
+    "question": "What does this log? (Same result in Node.js or a modern browser, as an ES module or a classic script.)",
+    "snippets": [
+      {
+        "lang": "js",
+        "code": "function setup() {\n  console.log(typeof value);\n  var value = 10;\n  function value() {}\n  console.log(typeof value);\n}\n\nsetup();"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "`\"undefined\"`, then `\"number\"`",
+        "why": "Tempting if you only remember the rule \"`var` is hoisted and starts as `undefined`\". That holds for a name declared only with `var`. Here the same name also has a function declaration, and a function declaration's binding starts out holding the function object. The `var` doesn't create a second binding or reset it to `undefined`, so the first log is `\"function\"`."
+      },
+      {
+        "id": "b",
+        "text": "`\"function\"`, then `\"function\"`",
+        "why": "Tempting if you picture the function declaration \"running\" on its line, after `var value = 10`, and overwriting the number. But a function declaration does all its work when the function is entered, before any code runs. Reaching the `function value() {}` line later does nothing, so the assignment `value = 10` is the last thing that changes the binding."
+      },
+      {
+        "id": "c",
+        "text": "`\"function\"`, then `\"number\"`"
+      },
+      {
+        "id": "d",
+        "text": "A `SyntaxError` because `value` is declared twice",
+        "why": "Tempting if you know `let` and `const` forbid redeclaring a name in the same scope (`let value = 10;` next to `function value() {}` really is a `SyntaxError`). But `var` allows redeclaration, and a `var` and a function declaration with the same name in a function body are allowed, even in strict mode code such as an ES module."
+      }
+    ],
+    "answer": "c",
+    "explanation": "When `setup()` is called, before any line of its body runs, the engine sets up its declarations:\n\n- `var value` and `function value() {}` share the **same single binding**.\n- That binding is initialized to the **function object**. The `var` part does not reset it to `undefined`; only the name is hoisted, not the `= 10`.\n\nThen the body runs top to bottom:\n\n- `console.log(typeof value)` → `\"function\"`.\n- `var value = 10;` executes as a plain assignment, `value = 10`.\n- `function value() {}` does nothing at this point; it was already handled on entry.\n- `console.log(typeof value)` → `\"number\"`.\n\nSo the output is `\"function\"`, then `\"number\"`.\n\nTakeaway: a name declared only with `var` starts as `undefined`, but if a function declaration shares the name, the function wins until an assignment runs. Giving a variable and a function the same name is a bug magnet; with `let`/`const` the engine reports it as a `SyntaxError` instead.",
+    "references": [
+      "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/var#redeclarations",
+      "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/function#redeclarations",
+      "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/let#redeclarations",
+      "https://tc39.es/ecma262/#sec-functiondeclarationinstantiation"
+    ]
+  },
+  {
+    "id": "javascript-020",
+    "difficulty": "expert",
+    "topic": "Hoisting: function declarations in blocks",
+    "kind": "output",
+    "question": "The same code is run twice in Node.js (or Chrome): once as a **classic, non-strict script** (e.g. a `.cjs` file or a plain `<script>`), and once as an **ES module** (a `.mjs` file or `<script type=\"module\">`). What does each run log?",
+    "snippets": [
+      {
+        "lang": "js",
+        "code": "console.log(typeof f);\n\nif (true) {\n  function f() {}\n}\n\nconsole.log(typeof f);"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "Both runs log `function`, then `function`",
+        "why": "Tempting because function declarations are famous for being hoisted *with their value*: you can call `foo()` on the line before `function foo() {}`. That only holds for declarations directly in a function body or at the top level of a script or module. A declaration inside a block is hoisted only to the top of that block. In non-strict code the extra outer binding starts as `undefined` and gets the function only when execution reaches the declaration inside the block. So neither run can log `function` before the `if`."
+      },
+      {
+        "id": "b",
+        "text": "Script: `undefined`, then `function`. Module: `undefined`, then `undefined`"
+      },
+      {
+        "id": "c",
+        "text": "Script: `undefined`, then `function`. Module: `undefined`, then a `ReferenceError` is thrown",
+        "why": "Tempting if you correctly know that `f` is block-scoped in a module and assume that reading a variable that doesn't exist throws. A plain read like `f()` would throw, but `typeof` on a name that isn't declared in any reachable scope returns `\"undefined\"` instead. `typeof` only throws for a `let`/`const`/`class` binding that exists but is still in its temporal dead zone. After the block there is no `f` binding at all, so the second `typeof` is safe (just like the first one)."
+      },
+      {
+        "id": "d",
+        "text": "Both runs log `undefined`, then `function`",
+        "why": "Tempting if you know the non-strict behavior and assume it applies everywhere. The legacy web-compatibility rules (Annex B of the spec) that create the extra outer binding apply only to **non-strict** code. ES modules are always strict, so there `f` is purely block-scoped and doesn't exist after the `if` block. The same happens in a classic script that starts with `\"use strict\"` and inside class bodies."
+      }
+    ],
+    "answer": "b",
+    "explanation": "Since ES2015, a function declaration inside a block is **block-scoped**: it is created when the block is entered (so it can be called anywhere inside that block) and it doesn't exist outside it. That's the whole story in **strict code**, which includes every ES module:\n\n- First `typeof f`: no `f` binding exists in this scope, and `typeof` on an undeclared name returns `\"undefined\"` without throwing.\n- Second `typeof f`: the block's `f` is gone once the block ends, so again `\"undefined\"`.\n\nIn **non-strict code**, the spec adds legacy web-compatibility rules (Annex B.3.2) because pre-2015 browsers allowed this pattern with inconsistent behavior. On top of the block-scoped `f`, the engine also creates a `var`-like `f` in the enclosing function or global scope:\n\n- That outer `f` is initialized to `undefined` (not to the function) at the start, so the first log is `\"undefined\"`.\n- When execution reaches the `function f() {}` statement inside the block, the block's function is copied into the outer `f`, so the second log is `\"function\"`. If the block never ran (e.g. `if (false)`), the outer `f` would stay `undefined`.\n\nResult: script `undefined` / `function`, module `undefined` / `undefined`. (In a `.cjs` file the code runs inside Node's CommonJS wrapper function, so the function-scope version of the rule applies; in a browser classic script it's the global version, and `f` also becomes a property of `window`.)\n\nEngines have historically differed on these legacy rules, which is why the question pins Node.js/Chrome. Don't depend on any of this: if a function must exist outside a block, declare it outside, or assign a function expression conditionally:\n\n```js\nlet f;\nif (cond) {\n  f = function () {};\n}\n```",
+    "references": [
+      "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/function#block-level_function_declaration",
+      "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/typeof#interaction_with_undeclared_and_uninitialized_variables",
+      "https://tc39.es/ecma262/#sec-block-level-function-declarations-web-legacy-compatibility-semantics"
+    ]
+  },
+  {
+    "id": "javascript-021",
+    "difficulty": "medium",
+    "topic": "Equality: NaN, includes vs indexOf",
+    "kind": "output",
+    "question": "What does this log? (Same result as an ES module or a classic script, in Node.js or a modern browser.)",
+    "snippets": [
+      {
+        "lang": "js",
+        "code": "const values = [NaN];\n\nconsole.log(\n  values.indexOf(NaN),\n  values.includes(NaN),\n  new Set([NaN, NaN, 0, -0]).size\n);"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "`-1 true 2`"
+      },
+      {
+        "id": "b",
+        "text": "`-1 false 3`",
+        "why": "This is what you get if every comparison used `===`: `NaN === NaN` is `false`, so `includes` would miss it and the Set would keep both `NaN`s (while `0 === -0` would merge the zeros). But only `indexOf` uses `===`. `includes` and `Set` use SameValueZero, which treats `NaN` as equal to `NaN`, so `includes` returns `true` and the two `NaN`s collapse into one entry."
+      },
+      {
+        "id": "c",
+        "text": "`0 true 2`",
+        "why": "Tempting because `indexOf` and `includes` look like two views of the same search (\"is it there?\" vs \"where is it?\"). They use different comparisons, though: `indexOf` uses strict equality (`===`), and since `NaN === NaN` is `false` it never finds `NaN` and returns `-1`."
+      },
+      {
+        "id": "d",
+        "text": "`-1 true 3`",
+        "why": "This assumes `Set` compares with `Object.is` (SameValue), which also treats `NaN` as equal to itself but keeps `+0` and `-0` apart. `Set` actually uses SameValueZero, where `0` and `-0` are the same value, so they share one entry and the size is `2`, not `3`."
+      }
+    ],
+    "answer": "a",
+    "explanation": "JavaScript has several equality algorithms, and these built-ins don't all use the same one:\n\n- `indexOf` / `lastIndexOf` use **strict equality** (`===`). `NaN === NaN` is `false`, so `[NaN].indexOf(NaN)` is `-1`. These methods can never find `NaN`.\n- `includes`, `Set` and `Map` use **SameValueZero**: like `===`, except `NaN` equals `NaN`. So `[NaN].includes(NaN)` is `true`.\n- `Object.is` uses **SameValue**: `NaN` equals `NaN`, and `+0` and `-0` are different.\n\nFor the Set: the two `NaN`s are the same value under SameValueZero, and so are `0` and `-0`. That leaves two entries (`NaN` and `0`), so `size` is `2`.\n\nResult: `-1 true 2`.\n\nTo find the position of `NaN` in an array, use a predicate instead of `indexOf`:\n\n```js\n[NaN].findIndex(Number.isNaN); // 0\n```",
+    "references": [
+      "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Equality_comparisons_and_sameness",
+      "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/indexOf",
+      "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/includes",
+      "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Set"
+    ]
+  },
+  {
+    "id": "javascript-022",
+    "difficulty": "hard",
+    "topic": "Coercion: relational vs == with null",
+    "kind": "output",
+    "question": "Which booleans end up in `results`, in order? (Any modern engine; same result in an ES module or a classic script.)",
+    "snippets": [
+      {
+        "lang": "js",
+        "code": "const results = [\n  null == 0,\n  null >= 0,\n  undefined >= 0,\n  '10' < '9',\n  '10' < 9,\n];\n\nconsole.log(results);"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "`[false, true, false, true, false]`"
+      },
+      {
+        "id": "b",
+        "text": "`[false, false, false, true, false]`",
+        "why": "Tempting if you read `a >= b` as \"`a > b` or `a == b`\": `null > 0` is `false` and `null == 0` is `false`, so `null >= 0` would be `false`. But the spec doesn't define `>=` that way. It evaluates `a >= b` as \"not `a < b`\", using the same numeric conversion as `<`: `null` becomes `0`, `0 < 0` is `false`, so `null >= 0` is `true`. `==` never takes part in it."
+      },
+      {
+        "id": "c",
+        "text": "`[true, true, true, false, false]`",
+        "why": "Tempting if you assume `null` and `undefined` both act like `0` everywhere and that numeric-looking strings compare as numbers. In fact `==` never converts `null` to a number (it is loosely equal only to `null` and `undefined`, apart from the legacy `document.all` quirk), `undefined` converts to `NaN` (not `0`) in a relational comparison, and two strings are compared character by character, not numerically."
+      },
+      {
+        "id": "d",
+        "text": "`[false, true, false, false, false]`",
+        "why": "Gets `null` and `undefined` right but assumes `'10' < '9'` compares the numbers 10 and 9. When **both** operands are strings, `<` compares them by UTF-16 code units, like dictionary order: the first characters are `'1'` (code unit 49) and `'9'` (code unit 57), and 49 < 57, so `'10' < '9'` is `true`. Only when one side is not a string (as in `'10' < 9`) are both converted to numbers."
+      }
+    ],
+    "answer": "a",
+    "explanation": "`==` and the relational operators (`<`, `>`, `<=`, `>=`) follow different coercion rules:\n\n- `null == 0` → `false`. Loose equality special-cases `null`/`undefined`: they are loosely equal to each other and to no other ordinary value (the only exception is the legacy browser object `document.all`). `null` is never converted to a number by `==`.\n- `null >= 0` → `true`. Relational operators convert non-string operands to numbers: `Number(null)` is `0`. And `a >= b` is evaluated as \"not `a < b`\": `0 < 0` is `false`, so the result is `true`.\n- `undefined >= 0` → `false`. `Number(undefined)` is `NaN`, and any relational comparison involving `NaN` is `false` (both `<` and `>=`).\n- `'10' < '9'` → `true`. Both operands are strings, so no number conversion happens: they are compared code unit by code unit, and `'1'` (49) comes before `'9'` (57).\n- `'10' < 9` → `false`. One operand is a number, so `'10'` is converted to `10`, and `10 < 9` is `false`.\n\nSo `null` is not `== 0`, yet it is `>= 0` (and `<= 0`). To compare numeric strings as numbers, convert them explicitly first, e.g. `Number(a) < Number(b)`.",
+    "references": [
+      "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Greater_than_or_equal",
+      "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Less_than",
+      "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Equality",
+      "https://tc39.es/ecma262/#sec-islessthan"
+    ]
+  },
+  {
+    "id": "javascript-023",
+    "difficulty": "medium",
+    "topic": "Coercion: + with arrays, identity",
+    "kind": "output",
+    "question": "What does this log? (Same result in Node.js or a modern browser, as an ES module or a classic script.)",
+    "snippets": [
+      {
+        "lang": "js",
+        "code": "const arr = [1, 2];\n\nconsole.log(arr + [3]);\nconsole.log(arr == '1,2');\nconsole.log([1, 2] === [1, 2]);"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "`[1, 2, 3]`, then `false`, then `false`",
+        "why": "Tempting if you expect `+` to work on arrays the way it does in Python, joining them into one array. JavaScript has no array `+`: both operands are converted to primitives first, and arrays become strings. Merging arrays needs `arr.concat([3])` or `[...arr, 3]`. The `false` for `arr == '1,2'` is also wrong: `==` converts the array to its string `\"1,2\"` before comparing, so it matches."
+      },
+      {
+        "id": "b",
+        "text": "`1,2,3`, then `true`, then `true`",
+        "why": "Tempting if you picture the two arrays being joined as one list. In fact each array is converted on its own (`\"1,2\"` and `\"3\"`) and the strings are concatenated with nothing in between, so there is no comma before the `3`. The final `true` is also wrong: `===` on objects compares identity, not contents, and each `[1, 2]` literal creates a new array."
+      },
+      {
+        "id": "c",
+        "text": "`NaN`, then `false`, then `false`",
+        "why": "Tempting if you assume `+` always does math. `NaN` is what you get from numeric-only operators such as `arr - [3]` or unary `+arr`. Binary `+` checks the converted values first: arrays convert to strings, and if either side is a string, `+` concatenates instead of adding. And `arr == '1,2'` is `true`, because the array converts to the string `\"1,2\"`."
+      },
+      {
+        "id": "d",
+        "text": "`1,23`, then `true`, then `false`"
+      }
+    ],
+    "answer": "d",
+    "explanation": "**Line 1: `arr + [3]`.** Binary `+` first converts both operands to primitives. For an array, `valueOf()` returns the array itself (not a primitive), so `toString()` is used, which is the same as `join(',')`:\n\n- `arr` → `\"1,2\"`\n- `[3]` → `\"3\"`\n\nBecause at least one side is now a string, `+` concatenates: `\"1,2\" + \"3\"` → `\"1,23\"`. `console.log` prints a string without quotes, so you see `1,23`.\n\n**Line 2: `arr == '1,2'`.** When `==` compares an object with a string, it converts the object to a primitive the same way, giving `\"1,2\"`. `\"1,2\" == \"1,2\"` → `true`.\n\n**Line 3: `[1, 2] === [1, 2]`.** Each array literal creates a new object. `===` (and `==`) on two objects compares identity: are they the same object? These are two different arrays, so the result is `false`, even though their contents match. (`arr == [1, 2]` is `false` too: with two objects, `==` doesn't convert anything.)\n\nTakeaways:\n\n- To merge arrays, use `concat` or spread, never `+`.\n- To compare array contents, compare element by element (for example with `every`), not with `==` or `===`.",
+    "references": [
+      "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Addition",
+      "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/toString",
+      "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Equality",
+      "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Strict_equality",
+      "https://tc39.es/ecma262/#sec-applystringornumericbinaryoperator"
+    ]
+  },
+  {
+    "id": "javascript-024",
+    "difficulty": "medium",
+    "topic": "async/await: async callback in forEach",
+    "kind": "debug",
+    "question": "This code runs as an ES module (so top-level `await` is allowed). `fetchItem` stands in for a network call and works fine: each call resolves about 100 ms later. Yet the log always prints `0`. What is the actual cause?",
+    "snippets": [
+      {
+        "lang": "js",
+        "code": "const fetchItem = (id) =>\n  new Promise((resolve) => setTimeout(() => resolve({ id }), 100));\n\nasync function loadItems(ids) {\n  const results = [];\n  ids.forEach(async (id) => {\n    const item = await fetchItem(id);\n    results.push(item);\n  });\n  return results;\n}\n\nconst items = await loadItems([1, 2, 3]);\nconsole.log(items.length); // 0"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "`forEach` runs the async callbacks one after another, waiting for each fetch to finish before starting the next, but `loadItems` returns before the last of them has pushed its item",
+        "why": "Tempting because the callback contains `await`, so it looks like the loop pauses there. But `forEach` never waits for anything: it calls the callback, ignores the promise it returns, and moves on. All three `fetchItem` calls start synchronously, one right after another, and run concurrently. Nothing has been pushed when `forEach` returns, not even the first item, and the three pushes later happen at about the same time (roughly 100 ms in, not 100/200/300 ms)."
+      },
+      {
+        "id": "b",
+        "text": "`loadItems` doesn't wait for the loop; writing `await ids.forEach(...)` would make it wait for all three fetches",
+        "why": "Tempting because \"add `await`\" is the usual fix for code that runs too early. But `forEach` always returns `undefined`, so `await ids.forEach(...)` just awaits `undefined`: it pauses for one microtask and continues. The 100 ms timers haven't fired by then, so `items.length` is still `0`. `await` can only wait for a promise you actually have, and `forEach` throws the callbacks' promises away."
+      },
+      {
+        "id": "c",
+        "text": "`forEach` ignores what its callback returns, so the promises from the async callbacks are discarded; it starts all three fetches and returns `undefined` immediately, and `loadItems` returns the still-empty array before any fetch resolves"
+      },
+      {
+        "id": "d",
+        "text": "`results` is declared with `const`, so the `push` calls inside the callbacks can't modify it; it has to be declared with `let`",
+        "why": "Tempting if you read `const` as \"immutable value\". `const` only prevents reassigning the variable (`results = ...`); the array it points to can still be mutated, and `push` works fine. In fact the pushes do happen: the array holds 3 items about 100 ms later. They just happen after `console.log` has already run."
+      }
+    ],
+    "answer": "c",
+    "explanation": "`Array.prototype.forEach` calls the callback for each element and **ignores its return value**. An `async` function always returns a promise, so each call:\n\n- runs synchronously until its first `await` (starting `fetchItem(id)`),\n- then returns a pending promise, which `forEach` discards.\n\nSo all three fetches start right away and run concurrently, `forEach` returns `undefined`, and `loadItems` immediately returns `results` while it is still empty. `await loadItems(...)` waits only for that returned promise, not for the fetches, so the log prints `0`. About 100 ms later the callbacks resume and push their items into the same array (it would then have length 3), but the log has already happened.\n\nUse a construct that actually waits for the promises:\n\n```js\n// Option 1, sequential: one fetch at a time (about 300 ms total here)\nconst results = [];\nfor (const id of ids) {\n  results.push(await fetchItem(id));\n}\n\n// Option 2, parallel: start all, wait for all (about 100 ms total here)\nconst results = await Promise.all(ids.map((id) => fetchItem(id)));\n```\n\n`Promise.all` also keeps results in the order of `ids`, even if the fetches finish in a different order.",
+    "references": [
+      "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/forEach",
+      "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/async_function",
+      "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise/all"
+    ]
+  },
+  {
+    "id": "javascript-025",
+    "difficulty": "hard",
+    "topic": "async/await: Promise.all fail-fast",
+    "kind": "output",
+    "question": "This is the entire program, run in Node.js or a modern browser (same result as an ES module or a classic script). The three timers use 10, 20 and 30 ms delays, far enough apart that they always fire in delay order. What is logged, in order?",
+    "snippets": [
+      {
+        "lang": "js",
+        "code": "const wait = (ms, value, fail = false) =>\n  new Promise((resolve, reject) => {\n    setTimeout(() => {\n      console.log('settled ' + value);\n      if (fail) reject(value);\n      else resolve(value);\n    }, ms);\n  });\n\nPromise.all([wait(30, 'a'), wait(10, 'b', true), wait(20, 'c')])\n  .then((values) => console.log('got ' + values))\n  .catch((err) => console.log('caught ' + err));"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "settled b, caught b",
+        "why": "Tempting if you think Promise.all cancels the other operations once one fails. It doesn't: JavaScript promises have no cancellation, and Promise.all never touches the timers. It only stops caring about the other results, so 'settled c' and 'settled a' are still logged at 20 ms and 30 ms."
+      },
+      {
+        "id": "b",
+        "text": "settled b, caught b, settled c, settled a"
+      },
+      {
+        "id": "c",
+        "text": "settled b, settled c, settled a, caught b",
+        "why": "Tempting if you think Promise.all waits for every input to settle before reporting a failure. That's how Promise.allSettled behaves (and it never rejects). Promise.all is fail-fast: it rejects as soon as the first input rejects, so 'caught b' is logged right after the 10 ms timer, before the other timers fire."
+      },
+      {
+        "id": "d",
+        "text": "settled a, settled b, caught b",
+        "why": "Tempting if you think Promise.all runs the tasks one after another in array order and stops at the first failure. Promise.all doesn't start anything: each `wait(...)` call already started its timer while the array literal was evaluated, so all three run concurrently and fire in delay order (b, c, a). Array order only decides the position of each value in the fulfilled result array."
+      }
+    ],
+    "answer": "b",
+    "explanation": "The three `wait(...)` calls run while the array literal is being built, so all three timers are already scheduled before `Promise.all` is even called. Promise.all just subscribes to the promises it receives.\n\n- **10 ms**: b's timer logs **settled b** and rejects. Promise.all rejects with that same reason (fail-fast) in a microtask right after the timer callback, and the microtask queue runs the `.catch` handler: **caught b**. The `.then` callback is skipped.\n- **20 ms**: c's timer still fires and logs **settled c**. Its promise fulfills, but the Promise.all promise has already settled, so the value is ignored.\n- **30 ms**: same for a: **settled a**, value ignored.\n\nResult: settled b, caught b, settled c, settled a. The other operations aren't cancelled; their results are just thrown away. If you need every outcome, use `Promise.allSettled`, which waits for all inputs and fulfills with an array of `{ status, value }` / `{ status, reason }` objects. If you need to actually stop the other work, you have to cancel it yourself (for example with an `AbortController` passed to `fetch`).",
+    "references": [
+      "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise/all",
+      "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise/allSettled",
+      "https://tc39.es/ecma262/#sec-promise.all"
+    ]
+  },
+  {
+    "id": "javascript-026",
+    "difficulty": "hard",
+    "topic": "async/await: return vs return await",
+    "kind": "debug",
+    "question": "`loadUser()` is supposed to fall back to a guest user when the request fails. But when the API answers with a 500, the `console.warn` never appears, `render` is never called, and the console shows an unhandled rejection `Error: HTTP 500`. Why doesn't the `catch` block handle the failure? (Assume `fetch` resolves with a response whose `ok` is `false`; the same happens if `fetch` itself rejects.)",
+    "snippets": [
+      {
+        "lang": "js",
+        "code": "function fetchUser(id) {\n  return fetch(`/api/users/${id}`).then((res) => {\n    if (!res.ok) throw new Error(`HTTP ${res.status}`);\n    return res.json();\n  });\n}\n\nasync function loadUser(id) {\n  try {\n    return fetchUser(id);\n  } catch (err) {\n    console.warn('Falling back to guest', err);\n    return { id, name: 'Guest' };\n  }\n}\n\nloadUser(42).then((user) => render(user));"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "A `catch` block in an async function only catches synchronous `throw`s; promise rejections can only be handled with `.catch()`.",
+        "why": "Tempting because rejections and `try`/`catch` feel like two separate error systems, and here the rejection really does slip past the `catch`. But inside an async function, `await` turns a rejection into a throw at that exact point, and a surrounding `try`/`catch` catches it like any other exception (`try { await Promise.reject(err) } catch (e) { ... }` does run the `catch`). The problem is that this code never awaits the promise inside the `try`."
+      },
+      {
+        "id": "b",
+        "text": "`return fetchUser(id)` returns the pending promise without awaiting it, so the `try` block finishes successfully before the request fails; the later rejection is passed on to `loadUser`'s own promise. `return await fetchUser(id)` fixes it."
+      },
+      {
+        "id": "c",
+        "text": "The `catch` block does run, but its return value is ignored because the `try` block already returned a promise.",
+        "why": "Tempting if you picture the `try` and `catch` both \"returning\" and the first one winning. But the `catch` block never runs at all: that's why the `console.warn` never appears. Evaluating `fetchUser(id)` doesn't throw (it just returns a promise), so there is no exception for the `catch` to receive, and the `try` completes with a normal `return`."
+      },
+      {
+        "id": "d",
+        "text": "`fetchUser` must be declared `async`; errors thrown inside a plain function's `.then()` callback can't be caught by the caller's `try`/`catch`.",
+        "why": "Tempting because `fetchUser` is the odd one out without `async`. But it already returns a promise that rejects when the callback throws, which is all an `async` function would give you. Making it `async` (even rewriting it with `await fetch(...)`) changes nothing here: `loadUser` would still return that promise without awaiting it, and its `catch` would still be skipped. The missing `await` in `loadUser` is the bug."
+      }
+    ],
+    "answer": "b",
+    "explanation": "A `try`/`catch` only catches exceptions thrown while execution is inside the `try` block. `return fetchUser(id)` evaluates `fetchUser(id)`, which doesn't throw: it immediately returns a pending promise. The `return` then completes the `try` block normally (a `finally` block would run at this point), and the `catch` is never consulted.\n\nAn async function's promise is resolved with whatever it returns. When that value is a promise, `loadUser`'s promise follows it, so when the request later fails, `loadUser(42)` rejects with `Error: HTTP 500`. The caller only passes a fulfillment handler to `.then()`, so nothing handles the rejection and it is reported as unhandled.\n\nWith `return await fetchUser(id)`, the function pauses **inside** the `try`. When the promise rejects, `await` throws the rejection reason at that point, the `catch` runs, and `loadUser` fulfills with the guest object:\n\n```js\nasync function loadUser(id) {\n  try {\n    return await fetchUser(id);\n  } catch (err) {\n    console.warn('Falling back to guest', err);\n    return { id, name: 'Guest' };\n  }\n}\n```\n\nOutside a `try`/`catch`/`finally`, `return promise` and `return await promise` settle the async function's promise with the same result (only the timing differs slightly). Inside a `try` block, `return await` is required if you want the `catch` or `finally` to see the outcome of the promise.",
+    "references": [
+      "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/async_function",
+      "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/await",
+      "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/try...catch"
+    ]
+  },
+  {
+    "id": "javascript-027",
+    "difficulty": "medium",
+    "topic": "async/await: sequential vs parallel",
+    "kind": "concept",
+    "question": "`getUser()` and `getSettings()` each return a promise that resolves about 100 ms after the function is **called** (it's just a timer, no CPU work). Ignoring a few milliseconds of overhead, which statement about how long each variant takes to resolve is correct? (Node or any modern browser, nothing else running.)",
+    "snippets": [
+      {
+        "lang": "js",
+        "code": "const wait = (ms, value) =>\n  new Promise((resolve) => setTimeout(() => resolve(value), ms));\nconst getUser = () => wait(100, { name: 'Ada' });\nconst getSettings = () => wait(100, { theme: 'dark' });\n\nasync function variant1() {\n  const user = await getUser();\n  const settings = await getSettings();\n  return { user, settings };\n}\n\nasync function variant2() {\n  const userP = getUser();\n  const settingsP = getSettings();\n  const user = await userP;\n  const settings = await settingsP;\n  return { user, settings };\n}"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "`variant1` takes about 200 ms; `variant2` takes about 100 ms."
+      },
+      {
+        "id": "b",
+        "text": "Both take about 100 ms: the engine notices that the two calls are independent and runs them in parallel automatically.",
+        "why": "Tempting because the two requests clearly don't depend on each other, so it feels like the engine should overlap them. But JavaScript does no such analysis. In `variant1`, `await getUser()` suspends the function before the next line runs, so `getSettings()` isn't even **called** until the user promise has resolved about 100 ms later. Its 100 ms timer starts only then, so the total is about 200 ms."
+      },
+      {
+        "id": "c",
+        "text": "Both take about 200 ms: in `variant2` each `await` still blocks until its promise resolves before the next line runs, so only `Promise.all` can make them overlap.",
+        "why": "Half right: `await userP` does pause `variant2` until `userP` resolves. The mistake is thinking the work starts at the `await`. Both `getUser()` and `getSettings()` were already **called** on the two lines above, so both timers are already running. By the time `await userP` finishes (about 100 ms), `settingsP` has also resolved, so `await settingsP` only waits for a microtask. `Promise.all` isn't what creates the overlap; starting both before awaiting does."
+      },
+      {
+        "id": "d",
+        "text": "Both take about 200 ms: JavaScript is single-threaded, so two timers can't count down at the same time.",
+        "why": "Tempting because \"single-threaded\" sounds like \"one thing at a time\". But only your JavaScript code runs on one thread; timers (and network requests) are tracked by the host environment (the browser or Node's event loop) while your code is idle. Two 100 ms `setTimeout`s started at the same moment both fire about 100 ms later, so in `variant2` the waits overlap."
+      }
+    ],
+    "answer": "a",
+    "explanation": "A promise-returning function starts its work when it is **called**, not when its promise is awaited. `await` only pauses the surrounding `async` function until an already-existing promise settles.\n\n- `variant1`: `await getUser()` calls `getUser()` and then suspends. `getSettings()` is called only after that resolves (~100 ms), and its own timer needs another ~100 ms. Total: about **200 ms** (the sum).\n- `variant2`: both functions are called on the first two lines, so both timers start at the same moment. `await userP` waits ~100 ms; by then `settingsP` has already resolved, so `await settingsP` continues almost immediately. Total: about **100 ms** (the max).\n\n`await Promise.all([getUser(), getSettings()])` gives the same ~100 ms because both calls happen while the array is built. It's still usually the better choice when you need both results: it rejects as soon as either promise rejects, and every promise has a handler attached right away. With the `variant2` pattern, if `settingsP` rejects while the function is still waiting on `userP`, that rejection has no handler yet and is reported as unhandled (Node's default behavior is to exit the process with the error; browsers fire an `unhandledrejection` event).\n\nUse sequential awaits only when the second call needs the first result (for example, fetching settings by `user.id`).",
+    "references": [
+      "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/await",
+      "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise/all",
+      "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/async_function"
+    ]
+  },
+  {
+    "id": "javascript-028",
+    "difficulty": "expert",
+    "topic": "async/await: async return values",
+    "kind": "output",
+    "question": "This is the entire program (same result as an ES module or a classic script, in Node.js or a modern browser). Both async functions finish their bodies synchronously, and `a` returns an already-fulfilled native promise. In what order are the values logged?",
+    "snippets": [
+      {
+        "lang": "js",
+        "code": "async function a() {\n  return Promise.resolve('a');\n}\n\nasync function b() {\n  return 'b';\n}\n\na().then(console.log);\nb().then(console.log);\n\nPromise.resolve()\n  .then(() => console.log(1))\n  .then(() => console.log(2))\n  .then(() => console.log(3))\n  .then(() => console.log(4));"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "a b 1 2 3 4",
+        "why": "Tempting because both function bodies run to completion synchronously, so it looks like both returned promises are already fulfilled and their callbacks just run in registration order. That's what happens if `a` is a plain (non-async) function returning `Promise.resolve('a')`, because then `a()` *is* that fulfilled promise. But an async function always returns a new promise, and resolving it with another promise is deferred, so the promise returned by `a()` is still pending when `.then(console.log)` is attached."
+      },
+      {
+        "id": "b",
+        "text": "b a 1 2 3 4",
+        "why": "Tempting if you think returning a promise from an async function just passes it through (as `Promise.resolve(p)` does: for a native promise `p` it returns `p` itself), so `a()` would be the already-fulfilled promise. It isn't: `a()` is a new promise, and it's resolved with the returned promise, so it has to adopt that promise's state, which takes extra microtasks. Note that even if `a()` were already fulfilled, its callback was registered before `b`'s, so it would log before `b`, not after."
+      },
+      {
+        "id": "c",
+        "text": "b 1 a 2 3 4",
+        "why": "Tempting if you think adopting the returned promise costs exactly one extra tick, like `await` on a native promise. That's the order you get with `return await Promise.resolve('a')`: the `await` takes one tick, and then the function returns a plain value. A bare `return` of a promise costs two ticks instead: one job to call the promise's `then`, and one for that `then` callback to resolve the outer promise. So **a** lands after 2, not after 1."
+      },
+      {
+        "id": "d",
+        "text": "b 1 2 a 3 4"
+      }
+    ],
+    "answer": "d",
+    "explanation": "An async function always returns a **new** promise. When the body finishes with `return x`, that new promise is resolved with `x`:\n\n- If `x` is a plain value like `'b'`, the promise is fulfilled right away.\n- If `x` is a thenable (any object with a callable `then`, native promises included), the promise has to adopt `x`'s state. The spec doesn't call `x.then` immediately: it queues a microtask (NewPromiseResolveThenableJob) that calls `x.then(resolve, reject)`. Since `x` is already fulfilled, that queues another microtask that finally resolves the outer promise. Two extra ticks.\n\nStep by step:\n\n1. Synchronous run: `a()` queues the job that will call `then` on the returned promise; its own promise is still pending, so `.then(console.log)` just registers a callback. `b()` returns a fulfilled promise, so its callback (log b) is queued. The chain queues the callback that logs 1. Queue: [call then, b, 1].\n2. The job calls `then` on the fulfilled inner promise, which queues the callback that resolves `a()`'s promise. Queue: [b, 1, resolve a].\n3. **b** is logged. **1** is logged, which queues 2. Queue: [resolve a, 2].\n4. `a()`'s promise is fulfilled with `'a'`, which queues the log of a. Queue: [2, a].\n5. **2** (queues 3), **a**, **3** (queues 4), **4**.\n\nResult: b 1 2 a 3 4.\n\nThe same \"new promise\" rule means identity is never preserved:\n\n```js\nconst p = Promise.resolve('a');\nasync function f() { return p; }\nf() === p;                  // false\nPromise.resolve(p) === p;   // true\n```\n\nIn practice, never rely on these tick counts for ordering; if one step must happen after another, chain or `await` it explicitly.",
+    "references": [
+      "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/async_function",
+      "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise/resolve",
+      "https://tc39.es/ecma262/#sec-promise-resolve-functions",
+      "https://tc39.es/ecma262/#sec-newpromiseresolvethenablejob"
+    ]
+  },
+  {
+    "id": "javascript-029",
+    "difficulty": "hard",
+    "topic": "Array callbacks: map(parseInt)",
+    "kind": "output",
+    "question": "What array does this log? (Same result in Node.js or a modern browser, as an ES module or a classic script.)",
+    "snippets": [
+      {
+        "lang": "js",
+        "code": "const nums = ['10', '10', '10'].map(parseInt);\n\nconsole.log(nums);"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "`[10, 10, 10]`",
+        "why": "Tempting if you read `.map(parseInt)` as shorthand for `.map(s => parseInt(s))`. But `map` calls its callback with three arguments: `(element, index, array)`. `parseInt` uses its second parameter as the radix, so the index is passed as the radix. You only get `[10, 10, 10]` with a wrapper such as `.map(s => parseInt(s, 10))` or with `.map(Number)`."
+      },
+      {
+        "id": "b",
+        "text": "`[10, NaN, NaN]`",
+        "why": "Tempting if you know the index becomes the radix but read the third `'10'` as the decimal number ten, which can't be written in base 2. `parseInt` reads the string digit by digit in the given base: `'1'` and `'0'` are both valid binary digits, so `parseInt('10', 2)` is binary `10`, which is `2`."
+      },
+      {
+        "id": "d",
+        "text": "`[10, 1, 2]`",
+        "why": "Tempting if you imagine radix 1 as a base whose only valid digit is `1`, so parsing would read the `'1'` and stop at the `'0'`. `parseInt` has no base 1: a radix outside 2–36 (other than `0`, which means \"not specified\") makes it return `NaN` without parsing any digits."
+      },
+      {
+        "id": "c",
+        "text": "`[10, NaN, 2]`"
+      }
+    ],
+    "answer": "c",
+    "explanation": "`map` calls its callback as `callback(element, index, array)`. Passing `parseInt` directly means each element is parsed as `parseInt(element, index, array)`. `parseInt` takes `(string, radix)` and ignores the third argument, so the **index becomes the radix**:\n\n- `parseInt('10', 0)` → `10`. A radix of `0` is treated as \"not specified\", so the string is read as decimal (a `0x` prefix would switch it to hex).\n- `parseInt('10', 1)` → `NaN`. Valid radixes are 2–36; anything else (except `0`) returns `NaN`.\n- `parseInt('10', 2)` → `2`. `'10'` in binary is two.\n\nSo `nums` is `[10, NaN, 2]` (Node prints it as `[ 10, NaN, 2 ]`).\n\nFix it by controlling the arguments yourself:\n\n```js\n['10', '10', '10'].map((s) => parseInt(s, 10)); // [10, 10, 10]\n['10', '10', '10'].map(Number);                  // [10, 10, 10]\n```\n\nThe two fixes are not identical: `Number` converts the whole string (`Number('10px')` is `NaN`), while `parseInt` stops at the first invalid character (`parseInt('10px', 10)` is `10`).\n\nGeneral lesson: be careful passing an existing function straight to `map`, `forEach`, or `filter`. If that function has a second or third parameter, it will receive the index and the array.",
+    "references": [
+      "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/map",
+      "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/parseInt",
+      "https://tc39.es/ecma262/#sec-parseint-string-radix"
+    ]
+  },
+  {
+    "id": "javascript-030",
+    "difficulty": "expert",
+    "topic": "Spread copies: shallow and getters",
+    "kind": "misconception",
+    "question": "A teammate says: \"`{ ...src }` gives you an independent copy that behaves just like the original.\" What does this log? (Same result in Node.js or a modern browser, as an ES module or a classic script.)",
+    "snippets": [
+      {
+        "lang": "js",
+        "code": "let n = 0;\nconst src = {\n  settings: { theme: 'dark' },\n  get id() { return ++n; },\n};\n\nconst copy = { ...src };\ncopy.settings.theme = 'light';\n\nconsole.log(src.settings.theme, copy.id, copy.id);"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "`dark 1 2`",
+        "why": "Tempting if you believe the teammate on both counts: a fully independent copy that keeps the getter. Neither holds. Spread copies only one level deep, so `copy.settings` is the same object as `src.settings` and the change shows through `src`. And spread reads each property with a normal get, so the getter runs once during the copy and `copy.id` is a plain value that stays `1`."
+      },
+      {
+        "id": "b",
+        "text": "`dark 1 1`",
+        "why": "You have the getter part right: its result is stored as a plain value, so both reads give `1`. But spread is a shallow copy. The `settings` property's value is a reference to an object, and spread copies that reference, not the object. `copy.settings` and `src.settings` are the same object, so setting `theme` through `copy` changes what `src` sees."
+      },
+      {
+        "id": "c",
+        "text": "`light 1 1`"
+      },
+      {
+        "id": "d",
+        "text": "`light 1 2`",
+        "why": "You have the shallow-copy part right: both objects share one `settings` object. But spread does not copy the getter itself. It reads `src.id` once while building `copy` (that call makes `n` equal `1`) and stores the result as an ordinary data property. Reading `copy.id` later never calls the getter again, so it stays `1`. Copying the accessor needs `Object.getOwnPropertyDescriptors`."
+      }
+    ],
+    "answer": "c",
+    "explanation": "Object spread copies the source's **own enumerable** properties. For each one it reads the value with a normal property get (the spec's CopyDataProperties) and creates a plain data property on the new object. Two consequences:\n\n- **Shallow:** the value of `settings` is a reference to an object, so `copy.settings === src.settings` is `true`. Changing `copy.settings.theme` changes the one shared object, and `src.settings.theme` logs `light`.\n- **Getters are flattened:** reading `src.id` during the spread runs the getter once (`n` becomes `1`). `copy.id` is then a data property with value `1`, `writable: true`, and no `get`. Every later read of `copy.id` returns `1` and `n` stays `1`.\n\nSo the output is `light 1 1`.\n\nIf you need something else:\n\n```js\n// Deep copy of plain data (getter results are stored as plain values,\n// and it throws a DataCloneError on functions):\nconst deep = structuredClone(src);\n\n// Shallow copy that keeps getters/setters as accessors:\nconst withAccessors = Object.defineProperties({}, Object.getOwnPropertyDescriptors(src));\n```",
+    "references": [
+      "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Spread_syntax",
+      "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object/getOwnPropertyDescriptors",
+      "https://developer.mozilla.org/en-US/docs/Web/API/Window/structuredClone",
+      "https://tc39.es/ecma262/#sec-copydataproperties"
+    ]
+  }
+]

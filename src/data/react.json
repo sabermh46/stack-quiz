@@ -1,0 +1,1237 @@
+[
+  {
+    "id": "react-001",
+    "difficulty": "medium",
+    "topic": "State batching & updater functions",
+    "kind": "output",
+    "question": "What does the button display after one click?",
+    "snippets": [
+      {
+        "lang": "jsx",
+        "code": "function Counter() {\n  const [count, setCount] = useState(0);\n\n  function handleClick() {\n    setCount(count + 1);\n    setCount(count + 1);\n    setCount((c) => c + 1);\n  }\n\n  return <button onClick={handleClick}>{count}</button>;\n}"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "1",
+        "why": "The last update is an updater function. It receives the pending queued value (1), not the stale `count` from the render, so it produces 2."
+      },
+      {
+        "id": "b",
+        "text": "3",
+        "why": "That would require each `setCount(count + 1)` to see the previous update. But `count` is a snapshot from this render; it's `0` for the whole event handler. Only the updater form receives the latest pending value."
+      },
+      {
+        "id": "c",
+        "text": "2"
+      },
+      {
+        "id": "d",
+        "text": "It throws, because value updates and updater functions can't be mixed for the same state",
+        "why": "Mixing is allowed. React applies queued updates in order: a value replaces the pending state, an updater function transforms it."
+      }
+    ],
+    "answer": "c",
+    "explanation": "In this render `count` is the constant `0`. React queues the three updates and processes them in order during the next render:\n\n1. `setCount(0 + 1)` → replace with 1\n2. `setCount(0 + 1)` → replace with 1\n3. `setCount(c => c + 1)` → the updater receives the pending 1 and returns 2\n\nAll three are batched into a single re-render, which displays 2.",
+    "references": [
+      "https://react.dev/learn/queueing-a-series-of-state-updates",
+      "https://react.dev/reference/react/useState#updating-state-based-on-the-previous-state"
+    ]
+  },
+  {
+    "id": "react-002",
+    "difficulty": "hard",
+    "topic": "Stale closures in effects",
+    "kind": "output",
+    "question": "What does this timer display over the first few seconds?",
+    "snippets": [
+      {
+        "lang": "jsx",
+        "code": "function Timer() {\n  const [seconds, setSeconds] = useState(0);\n\n  useEffect(() => {\n    const id = setInterval(() => {\n      setSeconds(seconds + 1);\n    }, 1000);\n    return () => clearInterval(id);\n  }, []);\n\n  return <p>{seconds}</p>;\n}"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "It counts up normally: 0, 1, 2, 3…",
+        "why": "The interval callback was created during the first render and closes over `seconds = 0` forever, because the empty dependency array means the effect never re-runs. Every tick calls `setSeconds(0 + 1)`."
+      },
+      {
+        "id": "b",
+        "text": "It stays at 0, because a callback can't update state after the effect has finished",
+        "why": "Calling a state setter from an async callback works fine. The first tick changes the value from 0 to 1."
+      },
+      {
+        "id": "c",
+        "text": "In development it goes up by 2 each second, because StrictMode runs the effect twice",
+        "why": "StrictMode runs setup → cleanup → setup in development, so the first interval is cleared and only one remains. Even if two intervals ran, both would just set the value to 1."
+      },
+      {
+        "id": "d",
+        "text": "It shows 0, then 1 after a second, and then stays at 1"
+      }
+    ],
+    "answer": "d",
+    "explanation": "This is a stale closure. The effect runs once (empty dependency array), so the interval callback is the one created in the first render, where `seconds` is `0`. Every tick calls `setSeconds(1)`. After the first tick the value is already 1, so nothing changes visually.\n\nFixes:\n- Use an updater function: `setSeconds(s => s + 1)`. It always receives the latest state, so the effect can keep `[]`.\n- Or add `seconds` to the dependencies (works, but recreates the interval every second).",
+    "references": [
+      "https://react.dev/reference/react/useEffect#updating-state-based-on-previous-state-from-an-effect",
+      "https://react.dev/learn/state-as-a-snapshot"
+    ]
+  },
+  {
+    "id": "react-003",
+    "difficulty": "hard",
+    "topic": "Keys: index keys and DOM state",
+    "kind": "debug",
+    "question": "The user types \"urgent\" into the note input of the first row (\"Buy milk\"), then clicks that row's **×** button. What's on screen afterwards?",
+    "snippets": [
+      {
+        "lang": "jsx",
+        "code": "function TodoList() {\n  const [todos, setTodos] = useState(['Buy milk', 'Walk dog']);\n\n  return todos.map((todo, index) => (\n    <div key={index}>\n      <span>{todo}</span>\n      <input placeholder=\"note\" />\n      <button onClick={() => setTodos(todos.filter((_, i) => i !== index))}>\n        ×\n      </button>\n    </div>\n  ));\n}"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "One row: \"Walk dog\", with \"urgent\" in its note input"
+      },
+      {
+        "id": "b",
+        "text": "One row: \"Walk dog\", with an empty note input",
+        "why": "That's what happens with stable keys (like an id). With index keys, the remaining item gets key `0`, so React reuses the first row's DOM, including the uncontrolled input that holds \"urgent\"."
+      },
+      {
+        "id": "c",
+        "text": "One row: \"Buy milk\", with \"urgent\" in its note input, because the wrong item was removed",
+        "why": "The state update is correct: `filter` removes index 0, so the rendered text is \"Walk dog\". Only the DOM state (the input's value) ends up attached to the wrong item."
+      },
+      {
+        "id": "d",
+        "text": "React logs a warning about duplicate keys",
+        "why": "Indexes are unique within a single render, so React has nothing to warn about. That's what makes this bug sneaky."
+      }
+    ],
+    "answer": "a",
+    "explanation": "Keys tell React which element is which between renders. The note `<input>` is **uncontrolled** (no `value` prop), so the text \"urgent\" lives only in that DOM node, not in React state.\n\n- Before: key `0` → \"Buy milk\" (its input holds \"urgent\"), key `1` → \"Walk dog\".\n- After: key `0` → \"Walk dog\".\n\nReact matches key `0` to the existing first row, updates its `<span>` text to \"Walk dog\", and keeps the same `<input>` DOM node, which still contains \"urgent\". Key `1` no longer exists, so the second row (with the empty input) is removed.\n\nFix: use a stable, unique id per item as the key, e.g. `key={todo.id}`.",
+    "references": [
+      "https://react.dev/learn/rendering-lists#why-does-react-need-keys",
+      "https://react.dev/learn/preserving-and-resetting-state"
+    ]
+  },
+  {
+    "id": "react-004",
+    "difficulty": "hard",
+    "topic": "useEffect cleanup timing",
+    "kind": "output",
+    "question": "`<Child id={1} />` is rendered, and later re-rendered as `<Child id={2} />`. The app is **not** in StrictMode, and `Child` stays mounted. What has been logged once the second render's effects have run?",
+    "snippets": [
+      {
+        "lang": "jsx",
+        "code": "function Child({ id }) {\n  useEffect(() => {\n    console.log('effect', id);\n    return () => console.log('cleanup', id);\n  }, [id]);\n\n  return null;\n}"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "`effect 1`, `cleanup 2`, `effect 2`",
+        "why": "The cleanup function is a closure created by the *previous* effect, so it sees the `id` from that render, which is 1."
+      },
+      {
+        "id": "b",
+        "text": "`effect 1`, `cleanup 1`, `effect 2`"
+      },
+      {
+        "id": "c",
+        "text": "`effect 1`, `effect 2`, `cleanup 1`",
+        "why": "React always runs the old effect's cleanup **before** running the new effect."
+      },
+      {
+        "id": "d",
+        "text": "`effect 1`, `effect 2`; cleanup only runs when the component unmounts",
+        "why": "Cleanup runs before every re-run of the effect (whenever a dependency changes), not only on unmount."
+      }
+    ],
+    "answer": "b",
+    "explanation": "When a dependency changes, React first runs the cleanup returned by the previous effect, then runs the new effect.\n\nThe cleanup is a closure from the render where `id` was 1, so it logs `cleanup 1`. Each render's effect and cleanup see that render's props and state.\n\n(In StrictMode during development you'd also see an extra `cleanup 1` / `effect 1` pair right after mount.)",
+    "references": [
+      "https://react.dev/reference/react/useEffect#parameters",
+      "https://react.dev/learn/lifecycle-of-reactive-effects"
+    ]
+  },
+  {
+    "id": "react-005",
+    "difficulty": "medium",
+    "topic": "Controlled vs uncontrolled inputs",
+    "kind": "debug",
+    "question": "What happens when the user starts typing in this input (development build)?",
+    "snippets": [
+      {
+        "lang": "jsx",
+        "code": "function Search() {\n  const [query, setQuery] = useState();\n\n  return (\n    <input value={query} onChange={(e) => setQuery(e.target.value)} />\n  );\n}"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "Typing works, but React warns in the console that the input is changing from uncontrolled to controlled"
+      },
+      {
+        "id": "b",
+        "text": "It works with no warning, because `undefined` is treated like an empty string",
+        "why": "It looks fine on screen, but React treats `value={undefined}` as \"no value prop\", which means uncontrolled. When `query` becomes a string, the input switches to controlled, and React warns in development."
+      },
+      {
+        "id": "c",
+        "text": "The input is read-only, so typing does nothing",
+        "why": "That happens with a defined `value` and no `onChange` (for example `value=\"\"` alone). Here the initial value is `undefined`, so the input starts uncontrolled and accepts typing."
+      },
+      {
+        "id": "d",
+        "text": "React throws an error on the first render because `value` must be a string",
+        "why": "No error. `undefined` is allowed; it simply means the input is uncontrolled."
+      }
+    ],
+    "answer": "a",
+    "explanation": "`useState()` with no argument starts as `undefined`. React treats `value={undefined}` the same as not passing `value`, so the input starts **uncontrolled**. After the first keystroke, `query` is a string, the input becomes **controlled**, and React logs (in development builds; production stays silent): \"A component is changing an uncontrolled input to be controlled.\"\n\nAn input should be one or the other for its whole lifetime. Fix: `useState('')`, or `value={query ?? ''}`.",
+    "references": [
+      "https://react.dev/reference/react-dom/components/input#controlling-an-input-with-a-state-variable",
+      "https://react.dev/reference/react-dom/components/input#im-getting-an-error-a-component-is-changing-an-uncontrolled-input-to-be-controlled"
+    ]
+  },
+  {
+    "id": "react-006",
+    "difficulty": "medium",
+    "topic": "Rules of hooks: early return",
+    "kind": "debug",
+    "question": "A parent renders `<Profile user={null} />` while data loads, then re-renders the **same** `Profile` (same position, no `key` change) with the fetched user object. There is no error boundary, and the app uses React 19 in a normal browser setup. What happens when the user arrives?",
+    "snippets": [
+      {
+        "lang": "jsx",
+        "code": "function Profile({ user }) {\n  const [tab, setTab] = useState('posts');\n\n  if (!user) return <p>Loading…</p>;\n\n  const [likes, setLikes] = useState(0);\n\n  return (\n    <section>\n      <h1>{user.name}</h1>\n      <p>{tab}: {likes} likes</p>\n    </section>\n  );\n}",
+        "label": "Profile.jsx"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "React throws `Rendered more hooks than during the previous render.`, so the profile never appears"
+      },
+      {
+        "id": "b",
+        "text": "It works: the first time the `likes` hook is reached, it initializes to `0` and the profile renders normally",
+        "why": "Tempting because `useState(0)` normally means \"start at 0 the first time\". But \"first time\" is per component mount, not per hook call. The second render is an **update** of an already-mounted component, so React expects to find a stored hook for every `useState` call, in order. The first render stored only one hook, so when the component calls a second one React has no stored state to match it to and throws."
+      },
+      {
+        "id": "c",
+        "text": "Nothing visible happens at runtime; it is only a lint rule violation flagged by `eslint-plugin-react-hooks`",
+        "why": "The lint rule (`react-hooks/rules-of-hooks`) does flag a hook called after an early return, which is why this looks like a style issue. But the rule exists because of a real runtime constraint: React identifies hooks purely by call order, and when the number of hooks changes between renders React throws an error. Running the code crashes the component regardless of whether a linter is configured."
+      },
+      {
+        "id": "d",
+        "text": "React notices the hook list changed and silently resets `tab` back to `'posts'`, then renders the profile",
+        "why": "Tempting if you imagine React re-syncing state when hooks change. React has no names for hooks, only positions, and it does not \"recover\" from a mismatch by resetting state. When the second render calls more hooks than the first, React throws instead of rendering. (State is only reset when the component remounts, for example because its `key` or position in the tree changes.)"
+      }
+    ],
+    "answer": "a",
+    "explanation": "React stores a component's hook state as an ordered list and matches each hook call to an entry **by call order**. That is why hooks must be called in the same order on every render.\n\n- First render (`user` is `null`): only `useState('posts')` runs, then the component returns early. React stores **one** hook.\n- Second render (`user` is set): this is an update, so React walks the stored list. The first `useState` matches entry 1, but the second `useState` has nothing stored to match, and React throws `Rendered more hooks than during the previous render.` In development React also logs a warning that it detected a change in the order of Hooks.\n\nWith no error boundary, an uncaught render error unmounts the whole root, so the page goes blank instead of showing the profile. The opposite direction (rendering with a user first, then `null`) also throws: `Rendered fewer hooks than expected. This may be caused by an accidental early return statement.`\n\n**Fix:** call every hook unconditionally at the top level, before any early return:\n\n```jsx\nfunction Profile({ user }) {\n  const [tab, setTab] = useState('posts');\n  const [likes, setLikes] = useState(0);\n\n  if (!user) return <p>Loading…</p>;\n  // ...\n}\n```",
+    "references": [
+      "https://react.dev/reference/rules/rules-of-hooks",
+      "https://react.dev/errors/310"
+    ]
+  },
+  {
+    "id": "react-007",
+    "difficulty": "expert",
+    "topic": "Rules of hooks: call order",
+    "kind": "output",
+    "question": "`Labels` is first rendered as `<Labels swap={false} />`, then re-rendered in the same place as `<Labels swap={true} />`. What happens on the second render? Assume React 19, development build, no StrictMode, and the lint rule for hooks is not run.",
+    "snippets": [
+      {
+        "lang": "jsx",
+        "code": "function Labels({ swap }) {\n  let first, second;\n\n  if (swap) {\n    second = useState('second');\n    first = useState('first');\n  } else {\n    first = useState('first');\n    second = useState('second');\n  }\n\n  return <p>{first[0]} / {second[0]}</p>;\n}"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "It shows `first / second`: each call's initial value ties its state to the right variable",
+        "why": "Tempting because the initial values look like labels. But React ignores the initial value after the first render and never sees variable names. It hands out state slots strictly by call position: the 1st `useState` call gets slot 0, the 2nd gets slot 1."
+      },
+      {
+        "id": "b",
+        "text": "React throws an error because the hooks were called in a different order",
+        "why": "Errors like \"Rendered more hooks than during the previous render\" fire when the **number** of hooks changes, and a crash from a mismatched slot happens when a slot is reused by a **different kind** of hook. Here there are still exactly two calls, both `useState`, so each slot is read by a compatible hook and nothing throws."
+      },
+      {
+        "id": "c",
+        "text": "It shows `first / second`, and the console logs a warning about a change in the order of Hooks",
+        "why": "That dev warning exists, but React detects order changes by comparing the sequence of hook **types** between renders. Both renders call `useState, useState`, so the sequences match and no warning is logged; and the values are swapped, not kept."
+      },
+      {
+        "id": "d",
+        "text": "It shows `second / first`, with no error or warning"
+      }
+    ],
+    "answer": "d",
+    "explanation": "React doesn't know which variable a `useState` call is assigned to. It stores a component's hook state as an ordered list and matches calls to entries purely by call order.\n\n- First render (`swap` is false): call 1 is `useState('first')` → slot 0 = `'first'`; call 2 is `useState('second')` → slot 1 = `'second'`. Output: `first / second`.\n- Second render (`swap` is true): call 1 is now the one assigned to `second`, and it receives slot 0, `'first'`. Call 2, assigned to `first`, receives slot 1, `'second'`. The initial-value arguments are ignored because the state already exists. Output: `second / first`.\n\nThe development-only order check compares the list of hook types (`useState`, `useState`) between renders. The types match, so nothing is logged and nothing throws: the bug is silent. If the swap had involved different hook types (say `useState` and `useRef`), React would log \"React has detected a change in the order of Hooks\".\n\nThis is why the Rules of Hooks say to call hooks unconditionally at the top level. The `react-hooks/rules-of-hooks` lint rule flags these conditional calls. Fix: call both hooks unconditionally, in a fixed order, and apply the condition to the **values** instead, e.g. `const a = useState('first'); const b = useState('second');` and then choose which one to show based on `swap`.",
+    "references": [
+      "https://react.dev/reference/rules/rules-of-hooks",
+      "https://react.dev/learn/state-a-components-memory"
+    ]
+  },
+  {
+    "id": "react-008",
+    "difficulty": "hard",
+    "topic": "Rules of hooks: use()",
+    "kind": "concept",
+    "question": "React 19. All imports come from `react`, `ThemeContext` was created with `createContext('light')`, and every component is rendered inside a `<ThemeContext value=\"dark\">` provider. Which component follows React's rules for calling Hooks and `use`?",
+    "snippets": [
+      {
+        "lang": "jsx",
+        "label": "Banner.jsx",
+        "code": "function Banner({ show }) {\n  if (show) {\n    const theme = useContext(ThemeContext);\n    return <p className={theme}>Welcome back</p>;\n  }\n  return null;\n}"
+      },
+      {
+        "lang": "jsx",
+        "label": "NameForm.jsx",
+        "code": "const FIELDS = ['first', 'last']; // never changes\n\nfunction NameForm() {\n  const inputs = [];\n  for (const field of FIELDS) {\n    const [value, setValue] = useState('');\n    inputs.push(\n      <input key={field} value={value} onChange={(e) => setValue(e.target.value)} />\n    );\n  }\n  return <form>{inputs}</form>;\n}"
+      },
+      {
+        "lang": "jsx",
+        "label": "Tooltip.jsx",
+        "code": "function Tooltip({ show }) {\n  if (show) {\n    const theme = use(ThemeContext);\n    return <p className={theme}>Tip: press Ctrl+K</p>;\n  }\n  return null;\n}"
+      },
+      {
+        "lang": "jsx",
+        "label": "ThemeButton.jsx",
+        "code": "function ThemeButton() {\n  function handleClick() {\n    const theme = use(ThemeContext);\n    console.log(theme);\n  }\n  return <button onClick={handleClick}>Log theme</button>;\n}"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "`Banner`: `useContext` inside an `if`",
+        "why": "Tempting because `useContext` only reads a value and stores no state, and this component does render correctly when `show` toggles. But `useContext` is a Hook, and the Rules of Hooks forbid calling Hooks conditionally. The `react-hooks/rules-of-hooks` lint rule reports it (\"React Hook \\\"useContext\\\" is called conditionally\"). If another Hook such as `useState` came after it, React would log \"React has detected a change in the order of Hooks\" in development when `show` changes. To read context conditionally, use `use(ThemeContext)` instead."
+      },
+      {
+        "id": "b",
+        "text": "`NameForm`: `useState` inside a loop over a constant array",
+        "why": "Tempting because `FIELDS` never changes, so the number and order of `useState` calls really is the same on every render, and it does run correctly today. But the Rules of Hooks forbid calling Hooks inside loops, and the lint rule reports it (\"React Hook \\\"useState\\\" may be executed more than once\"). It is also fragile: if `FIELDS` ever became dynamic, the Hook order would shift. The rule-following version is a single `useState({ first: '', last: '' })` object, or one child component per field that calls `useState` at its top level."
+      },
+      {
+        "id": "c",
+        "text": "`Tooltip`: `use(ThemeContext)` inside an `if`"
+      },
+      {
+        "id": "d",
+        "text": "`ThemeButton`: `use(ThemeContext)` inside the click handler",
+        "why": "Tempting because `use` is the \"flexible\" one. But that flexibility only covers conditions and loops. `use` must still be called while a component or Hook is rendering. `handleClick` runs later, in response to a click, so the call throws \"Context can only be read while React is rendering\". The lint rule also flags it. Read the context during render (`const theme = use(ThemeContext);` in the component body) and use that `theme` value inside the handler."
+      }
+    ],
+    "answer": "c",
+    "explanation": "`use` is not a regular Hook. The React docs say that **unlike React Hooks, `use` can be called within loops and conditional statements like `if`**. The remaining rule still applies: the function that calls `use` must be a component or a Hook, and the call must happen during render. `Tooltip` calls `use(ThemeContext)` inside an `if` while it renders, which is allowed. It renders `<p class=\"dark\">` when `show` is `true`, with no warnings or lint errors.\n\nThe other three break the rules:\n\n- `Banner` calls the Hook `useContext` conditionally. Hooks must be called at the top level, in the same order on every render.\n- `NameForm` calls `useState` in a loop. A loop that always runs the same number of times is still a loop, and the rule (and its lint check) has no exception for it.\n- `ThemeButton` calls `use` in an event handler, outside rendering, so it throws when clicked.\n\nTwo more things to remember about `use`: for a Promise it can't be called inside a `try`/`catch` block (use an Error Boundary instead), and in Server Components `async`/`await` is preferred for data fetching.",
+    "references": [
+      "https://react.dev/reference/react/use",
+      "https://react.dev/reference/rules/rules-of-hooks",
+      "https://react.dev/reference/react/useContext"
+    ]
+  },
+  {
+    "id": "react-009",
+    "difficulty": "medium",
+    "topic": "useEffect deps: objects",
+    "kind": "output",
+    "question": "`ChatRoom` is rendered once as `<ChatRoom roomId=\"general\" />` and its props never change. The user then types 3 characters into the message input. `connect()` and `disconnect()` just log. The app is **not** in StrictMode and does **not** use the React Compiler. In total (including the initial mount), how many times does `connect()` run?",
+    "snippets": [
+      {
+        "lang": "jsx",
+        "code": "const serverUrl = 'https://chat.example';\n\nfunction ChatRoom({ roomId }) {\n  const [message, setMessage] = useState('');\n  const options = { serverUrl, roomId };\n\n  useEffect(() => {\n    const conn = createConnection(options);\n    conn.connect();\n    return () => conn.disconnect();\n  }, [options]);\n\n  return (\n    <input\n      value={message}\n      onChange={e => setMessage(e.target.value)}\n    />\n  );\n}"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "1, because `roomId` and `serverUrl` never change",
+        "why": "Tempting because the object's **contents** are identical every time. But React compares each dependency with `Object.is`, which for objects checks identity, not contents. `{ serverUrl, roomId }` builds a brand-new object on every render, so it never equals the previous one."
+      },
+      {
+        "id": "b",
+        "text": "4"
+      },
+      {
+        "id": "c",
+        "text": "It never settles: the effect re-runs in an endless loop until React reports a \"Maximum update depth exceeded\" error",
+        "why": "An endless loop needs the effect itself to cause another render (for example by calling `setState` with a new value). This effect only connects and disconnects; it never updates state, so it runs once per render and then stops. The extra renders come only from the user's keystrokes."
+      },
+      {
+        "id": "d",
+        "text": "1, because typing only changes local state, and React re-checks an effect's dependencies only when props change",
+        "why": "React compares an effect's dependencies after **every** render of the component, whatever caused it: new props, a state update, or a parent re-render. Each keystroke calls `setMessage`, which re-renders `ChatRoom`, so the dependencies are compared again."
+      }
+    ],
+    "answer": "b",
+    "explanation": "React compares each value in the dependency array with its value from the previous render using `Object.is`. For objects, `Object.is` is true only for the **same reference**.\n\n`const options = { serverUrl, roomId }` runs during render, so every render creates a new object. Each keystroke calls `setMessage`, which re-renders `ChatRoom`, and the new `options` is never `Object.is`-equal to the old one. So after every render React runs the previous cleanup and then the effect again:\n\n- mount: `connect`\n- each of the 3 keystrokes: `disconnect`, then `connect`\n\nThat's 1 + 3 = **4** calls to `connect()` (and 3 to `disconnect()`), even though the room never changed.\n\nFix: depend on the primitive instead, or create the object inside the effect:\n\n```jsx\nuseEffect(() => {\n  const options = { serverUrl, roomId };\n  const conn = createConnection(options);\n  conn.connect();\n  return () => conn.disconnect();\n}, [roomId]);\n```\n\n(`serverUrl` is a module-level constant here, so it isn't a dependency.) With that change, typing no longer reconnects: `connect()` runs once. In StrictMode during development the original code would log one extra `disconnect`/`connect` pair right after mount.",
+    "references": [
+      "https://react.dev/reference/react/useEffect#removing-unnecessary-object-dependencies",
+      "https://react.dev/learn/removing-effect-dependencies#does-some-reactive-value-change-unintentionally",
+      "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object/is"
+    ]
+  },
+  {
+    "id": "react-010",
+    "difficulty": "expert",
+    "topic": "useEffect deps: Object.is",
+    "kind": "output",
+    "question": "`<PriceTag text=\"abc\" />` is mounted. The user clicks the button twice, and then the parent re-renders it as `<PriceTag text=\"xyz\" />`. The app is **not** in StrictMode. How many times is `recalc` logged in total?",
+    "snippets": [
+      {
+        "lang": "jsx",
+        "code": "function PriceTag({ text }) {\n  const [qty, setQty] = useState(1);\n  const price = Number(text);\n\n  useEffect(() => {\n    console.log('recalc', price);\n  }, [price]);\n\n  return (\n    <button onClick={() => setQty(q => q + 1)}>\n      {qty} x {price}\n    </button>\n  );\n}"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "4 times: on every render, because `NaN !== NaN` makes the dependency look changed each time",
+        "why": "Tempting because `NaN === NaN` is `false`, so with `===` the dependency would never look equal to its previous value. But React compares dependencies with `Object.is`, and `Object.is(NaN, NaN)` is `true`, so the two clicks (and the prop change) don't re-run the effect."
+      },
+      {
+        "id": "b",
+        "text": "Once, on mount (`recalc NaN`)"
+      },
+      {
+        "id": "c",
+        "text": "Twice: on mount, and again when `text` changes from `\"abc\"` to `\"xyz\"`",
+        "why": "Tempting if you think the effect tracks the prop that `price` comes from. React only compares the values in the dependency array: `Number(\"xyz\")` is `NaN` again, and `Object.is(NaN, NaN)` is `true`, so nothing changed as far as React can tell. (Changing `text` to `\"12\"` would re-run it, because `12` differs from `NaN`.)"
+      },
+      {
+        "id": "d",
+        "text": "Never: React skips effects whose dependencies are `NaN`",
+        "why": "An effect always runs after the component's first commit, whatever its dependencies are; the array only decides whether it runs *again* on later renders. `NaN` is an ordinary value as a dependency, and React doesn't skip or warn about it."
+      }
+    ],
+    "answer": "b",
+    "explanation": "React decides whether to re-run an effect by comparing each dependency with its value from the previous render using `Object.is`, not `===`.\n\n- Mount: `price` is `Number(\"abc\")`, which is `NaN`. The effect runs once and logs `recalc NaN`.\n- Two clicks: `qty` changes and the component re-renders, but `price` is still `NaN`. `Object.is(NaN, NaN)` is `true`, so the effect is skipped.\n- `text=\"xyz\"`: `Number(\"xyz\")` is also `NaN`, so again the dependency is unchanged and the effect is skipped.\n\nSo the component renders 4 times but `recalc` is logged once. `Object.is` differs from `===` in exactly two cases: `Object.is(NaN, NaN)` is `true` (while `NaN === NaN` is `false`), and `Object.is(0, -0)` is `false` (while `0 === -0` is `true`). So going from `price` `0` to `-0` *would* re-run the effect.\n\nIf the effect really needs to react to the raw input, depend on `text` instead of the derived number. (In development StrictMode, React runs setup, cleanup, then setup again on mount, so you'd see `recalc NaN` twice.)",
+    "references": [
+      "https://react.dev/reference/react/useEffect#parameters",
+      "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object/is"
+    ]
+  },
+  {
+    "id": "react-011",
+    "difficulty": "hard",
+    "topic": "useEffect deps: functions",
+    "kind": "debug",
+    "question": "`<SearchResults query=\"cats\" />` is mounted once and `query` never changes. Bug report: the network tab shows `/api/search?q=cats` firing over and over, forever, and it happens in a **production build** too (no StrictMode involved). What is the cause?",
+    "snippets": [
+      {
+        "lang": "jsx",
+        "code": "async function fetchResults(query) {\n  const res = await fetch(`/api/search?q=${encodeURIComponent(query)}`);\n  return res.json(); // a freshly parsed array on every call\n}\n\nfunction SearchResults({ query }) {\n  const [results, setResults] = useState([]);\n\n  async function load() {\n    const data = await fetchResults(query);\n    setResults(data);\n  }\n\n  useEffect(() => {\n    load();\n  }, [load]);\n\n  return <ul>{results.map((r) => <li key={r.id}>{r.title}</li>)}</ul>;\n}"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "`load` is a new function on every render, so the `[load]` dependency changes every time: each `setResults` re-renders, the re-render creates a new `load`, the effect runs again and fetches again."
+      },
+      {
+        "id": "b",
+        "text": "StrictMode keeps double-invoking the effect in development, so it never settles.",
+        "why": "Tempting because StrictMode really does run effects twice in development. But it adds only **one** extra setup + cleanup cycle right after mount, not an endless loop, and it does nothing in a production build, where this bug still happens."
+      },
+      {
+        "id": "c",
+        "text": "The effect should depend on `query`; changing the array to `[query, load]` stops the repeated requests.",
+        "why": "Tempting because `query` is the value that should drive the fetch. But `load` is still in the array and is still a brand-new function after every render, so the array still changes on every commit and the loop continues. `query` should be the *only* dependency, which means `load` must move inside the effect (or be memoized)."
+      },
+      {
+        "id": "d",
+        "text": "Setting state to the same data bails out, so the re-render is not the trigger; the real cause is the missing cleanup function.",
+        "why": "The bail-out compares with `Object.is`, i.e. by reference. `res.json()` returns a new array every time, so `setResults(data)` always re-renders. A cleanup (an `ignore` flag or `AbortController`) only discards responses that arrive *after* the dependencies change; here each response is applied first and *causes* the change, so the loop keeps going with or without a cleanup."
+      }
+    ],
+    "answer": "a",
+    "explanation": "A function declared in the component body is a new function object on every render. Used as an effect dependency, it makes the dependency array different after every commit, so the effect re-runs after every render.\n\nThat turns into a cycle here:\n\n- the effect calls `load()`, which fetches\n- `setResults(data)` stores a new array (a new reference), so the component re-renders\n- the new render creates a new `load`, so `[load]` changed\n- the effect runs again and fetches again, forever\n\nBecause `setResults` runs after an `await`, each update starts a separate render later on rather than a synchronous chain of nested updates, so React never throws or warns \"Maximum update depth exceeded\". The page looks fine; the requests just never stop.\n\nFix it by moving the function into the effect so the effect depends only on `query`:\n\n```jsx\nuseEffect(() => {\n  async function load() {\n    const data = await fetchResults(query);\n    setResults(data);\n  }\n  load();\n}, [query]);\n```\n\nAlternatively, wrap `load` in `useCallback(..., [query])` so it keeps the same identity until `query` changes. Adding a cleanup that ignores stale responses is still good practice for races when `query` changes, but it is not what stops this loop.",
+    "references": [
+      "https://react.dev/reference/react/useEffect#removing-unnecessary-function-dependencies",
+      "https://react.dev/learn/removing-effect-dependencies#does-some-reactive-value-change-unintentionally",
+      "https://react.dev/reference/react/useState#setstate"
+    ]
+  },
+  {
+    "id": "react-012",
+    "difficulty": "hard",
+    "topic": "useEffect cleanup: race conditions",
+    "kind": "debug",
+    "question": "`fetchBio(name)` returns a Promise that resolves to that person's bio string, and response times vary. The user selects **Bob** and then quickly **Carol**. Carol's response arrives first, Bob's slow response arrives after it, and the page ends up showing Carol's name with Bob's bio.\n\nWhich change guarantees that a response for a person who is no longer selected is never written into `bio`?",
+    "snippets": [
+      {
+        "lang": "jsx",
+        "code": "function Profile({ person }) {\n  const [bio, setBio] = useState(null);\n\n  useEffect(() => {\n    fetchBio(person).then(setBio);\n  }, [person]);\n\n  return <p>{person}: {bio ?? 'Loading...'}</p>;\n}"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "Add `bio` to the dependency array: `[person, bio]`",
+        "why": "Tempting because \"stale data\" often means a missing dependency. But the dependency array only decides when the effect runs again; it can't stop a request that is already in flight. Bob's response still calls `setBio` with Bob's bio. Because `bio` changed, the effect then re-runs and fetches Carol again, so the screen flips from Bob's bio back to Carol's: the wrong bio is still shown for a moment, and every response triggers another request (if `fetchBio` resolved to a new object each time, it would refetch forever)."
+      },
+      {
+        "id": "b",
+        "text": "Make the callback async: `useEffect(async () => { setBio(await fetchBio(person)); }, [person])`",
+        "why": "Tempting because `await` reads like \"wait for this request before doing anything else\". But `await` only pauses this one effect run; it doesn't cancel or reorder Bob's run, which still calls `setBio` whenever his response arrives. Worse, an `async` function always returns a Promise, and an effect may only return a cleanup function or nothing. React warns about this in development, and when `person` changes it tries to call that Promise as the cleanup, which throws a `TypeError` (with no error boundary, the app unmounts)."
+      },
+      {
+        "id": "c",
+        "text": "Declare `let ignore = false;` at module level (outside the component). In the effect, set `ignore = false`, call `fetchBio(person).then(d => { if (!ignore) setBio(d); })`, and return `() => { ignore = true; }`",
+        "why": "Tempting because it looks almost identical to the real fix. But there is only one `ignore` variable, shared by every effect run (and every `Profile` on the page). When Carol is selected, the cleanup sets it to `true` and Carol's effect immediately sets it back to `false`, so when Bob's response arrives, `!ignore` is `true` and his bio is written anyway."
+      },
+      {
+        "id": "d",
+        "text": "Inside the effect, declare `let ignore = false;`, call `fetchBio(person).then(d => { if (!ignore) setBio(d); })`, and return `() => { ignore = true; }`"
+      }
+    ],
+    "answer": "d",
+    "explanation": "Responses can arrive in any order, so the last request to **resolve** wins, not the last one **started**. The fix is to make each effect run able to tell whether it is still current.\n\n```jsx\nuseEffect(() => {\n  let ignore = false;\n  fetchBio(person).then(d => {\n    if (!ignore) setBio(d);\n  });\n  return () => { ignore = true; };\n}, [person]);\n```\n\n- Each run of the effect creates its **own** `ignore` variable, and its `.then` callback and cleanup both close over that same variable.\n- When `person` changes from Bob to Carol, React runs Bob's cleanup before Carol's effect. That sets Bob's `ignore` to `true`, and Carol's run gets a fresh `ignore = false`.\n- When Bob's slow response finally arrives, his callback sees his own `ignore === true` and skips `setBio`. Only the run for the currently selected person can update state.\n\nThe same cleanup also covers unmounting: a response that arrives after `Profile` is removed is ignored. This works the same with or without StrictMode.\n\nIf the request API accepts an `AbortSignal` (like `fetch`), you can instead create an `AbortController` in the effect and call `controller.abort()` in the cleanup, which also cancels the outdated request. The `ignore` flag works with any Promise.",
+    "references": [
+      "https://react.dev/reference/react/useEffect#fetching-data-with-effects",
+      "https://react.dev/learn/synchronizing-with-effects#fetching-data",
+      "https://react.dev/learn/you-might-not-need-an-effect#fetching-data"
+    ]
+  },
+  {
+    "id": "react-013",
+    "difficulty": "medium",
+    "topic": "useEffect cleanup: StrictMode",
+    "kind": "output",
+    "question": "This React 19 app runs on the Vite **dev server** (development build), and the root is wrapped in `<StrictMode>`. Nothing else logs. What does the console show right after the page loads, before the user does anything?",
+    "snippets": [
+      {
+        "lang": "jsx",
+        "label": "main.jsx",
+        "code": "import { StrictMode, useEffect } from 'react';\nimport { createRoot } from 'react-dom/client';\n\nfunction ChatStatus() {\n  useEffect(() => {\n    console.log('subscribe');\n    return () => console.log('unsubscribe');\n  }, []);\n\n  return <p>Online</p>;\n}\n\ncreateRoot(document.getElementById('root')).render(\n  <StrictMode>\n    <ChatStatus />\n  </StrictMode>\n);"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "`subscribe`",
+        "why": "Tempting because an empty dependency array is often described as \"run once on mount\", and that is what you see in a production build. But in development, StrictMode deliberately runs one extra setup + cleanup cycle when the component mounts, so the effect runs twice and the cleanup runs once in between."
+      },
+      {
+        "id": "b",
+        "text": "`subscribe`, `subscribe`",
+        "why": "Tempting if you remember that StrictMode \"runs effects twice\" but forget the cleanup. React never re-runs an effect without first running the previous setup's cleanup, so the extra cycle is setup → cleanup → setup. Seeing two subscriptions with no unsubscribe between them is exactly the kind of leak this check is meant to expose."
+      },
+      {
+        "id": "c",
+        "text": "`subscribe`, `unsubscribe`, `subscribe`"
+      },
+      {
+        "id": "d",
+        "text": "`subscribe`, `unsubscribe`",
+        "why": "Tempting if you think StrictMode simulates an unmount and stops there. It simulates an unmount **and a remount**: after the cleanup, React runs the setup again, and the component stays on screen showing \"Online\". The final `unsubscribe` only appears later, when the component really unmounts."
+      }
+    ],
+    "answer": "c",
+    "explanation": "In development, when a component mounts inside `<StrictMode>`, React runs one extra setup + cleanup cycle for every effect before the real setup: **setup → cleanup → setup**. So the console shows `subscribe`, `unsubscribe`, `subscribe`.\n\n- This only happens in development. A production build logs a single `subscribe` on mount.\n- It does not happen on later re-renders: with `[]` the effect doesn't re-run, and the next `unsubscribe` is logged when the component actually unmounts.\n\nThe point of the extra cycle is to surface effects with missing or incomplete cleanup. If your cleanup correctly undoes the setup, the user can't tell the difference between setup → cleanup → setup and a single setup. Don't try to \"fix\" the double log with a ref guard; fix the cleanup instead.",
+    "references": [
+      "https://react.dev/reference/react/StrictMode#fixing-bugs-found-by-re-running-effects-in-development",
+      "https://react.dev/learn/synchronizing-with-effects#how-to-handle-the-effect-firing-twice-in-development"
+    ]
+  },
+  {
+    "id": "react-014",
+    "difficulty": "expert",
+    "topic": "useEffect cleanup timing",
+    "kind": "output",
+    "question": "The app runs on React 19 and is **not** in StrictMode. After the first render, the console shows `effect A 0` and `effect B 0`. Then the button is clicked once. Which lines are logged as a result of that click, in order?",
+    "snippets": [
+      {
+        "lang": "jsx",
+        "code": "function Item({ name, n }) {\n  useEffect(() => {\n    console.log(`effect ${name} ${n}`);\n    return () => console.log(`cleanup ${name} ${n}`);\n  }, [n]);\n  return null;\n}\n\nfunction App() {\n  const [n, setN] = useState(0);\n  return (\n    <>\n      <button onClick={() => setN(1)}>go</button>\n      <Item name=\"A\" n={n} />\n      <Item name=\"B\" n={n} />\n    </>\n  );\n}"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "`cleanup A 0`, `effect A 1`, `cleanup B 0`, `effect B 1`",
+        "why": "This is tempting because, looking at one component at a time, \"cleanup, then re-run\" is correct. But React doesn't finish each component's cleanup-and-setup pair before moving on. Since React 17 it runs every pending cleanup in the commit (for all components) before it runs any new effect, so `cleanup B 0` comes before `effect A 1`."
+      },
+      {
+        "id": "b",
+        "text": "`effect A 1`, `effect B 1`, `cleanup A 0`, `cleanup B 0`",
+        "why": "This treats cleanup as something that happens after the new effects are set up, like tearing down the old version once the new one is in place. React does the opposite: a previous effect's cleanup always runs before the next setup of that effect, and here all the cleanups run before any setup."
+      },
+      {
+        "id": "c",
+        "text": "`cleanup A 0`, `cleanup B 0`, `effect A 1`, `effect B 1`"
+      },
+      {
+        "id": "d",
+        "text": "`cleanup A 1`, `cleanup B 1`, `effect A 1`, `effect B 1`",
+        "why": "The ordering is right, but the values are not. It's tempting to think cleanup runs \"with the new props\" because it runs during the update. But a cleanup function is a closure created by the previous effect run, so it sees `n` from the render where it was created, which is 0."
+      }
+    ],
+    "answer": "c",
+    "explanation": "Both `Item`s re-render in the same commit because `n` changed, and both effects list `n` as a dependency, so both must clean up and re-run.\n\nReact doesn't handle this one component at a time. After the commit, it flushes passive effects in two passes:\n- First it runs the cleanup of **every** effect that needs to re-run (or is unmounting), across all components in the commit: `cleanup A 0`, `cleanup B 0`.\n- Then it runs all the new effect setups: `effect A 1`, `effect B 1`.\n\nSiblings are visited in tree order, so A comes before B in each pass. The React 17 release notes describe this guarantee: React \"will always execute all effect cleanup functions (for all components) before it runs any new effects\". React 16 only guaranteed that order within a single component.\n\nEach cleanup is a closure from the previous render, so it logs the old value, 0.\n\nWhy it matters: no component's new effect ever runs while another component's old effect is still active. For example, if two components subscribe to the same shared resource, all the old subscriptions are torn down before any new one is created.",
+    "references": [
+      "https://legacy.reactjs.org/blog/2020/08/10/react-v17-rc.html#effect-cleanup-timing",
+      "https://react.dev/reference/react/useEffect#parameters"
+    ]
+  },
+  {
+    "id": "react-015",
+    "difficulty": "hard",
+    "topic": "Stale closures: event listeners",
+    "kind": "output",
+    "question": "`Editor` is mounted (the app is **not** in StrictMode). The user focuses the input, types `h`, then `i`, then presses **Enter** once. What does the console show?",
+    "snippets": [
+      {
+        "lang": "jsx",
+        "code": "function Editor() {\n  const [text, setText] = useState('');\n\n  useEffect(() => {\n    window.addEventListener('keydown', (e) => {\n      if (e.key === 'Enter') {\n        console.log('save', JSON.stringify(text));\n      }\n    });\n  }, [text]);\n\n  return <input value={text} onChange={(e) => setText(e.target.value)} />;\n}"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "Only `save \"hi\"`",
+        "why": "Tempting because adding `text` to the dependency array is the usual fix for a stale closure, and the newest listener does see `\"hi\"`. But re-running the effect only **adds** a listener; without a cleanup function nothing removes the listeners from earlier renders, so they still run too."
+      },
+      {
+        "id": "b",
+        "text": "`save \"\"`, then `save \"h\"`, then `save \"hi\"`"
+      },
+      {
+        "id": "c",
+        "text": "Only `save \"\"`",
+        "why": "This is the answer for an effect with `[]` deps, where only the first-render listener exists and it is stuck with `\"\"`. Here the deps are `[text]`, so the effect runs again after each change and registers another listener each time."
+      },
+      {
+        "id": "d",
+        "text": "`save \"hi\"` three times",
+        "why": "Tempting if you expect every listener to read the current state. A closure captures the `text` constant of the render in which it was created; it does not read state live. The three listeners were created in renders where `text` was `\"\"`, `\"h\"` and `\"hi\"`."
+      }
+    ],
+    "answer": "b",
+    "explanation": "The effect runs after the first render and after every render where `text` changed: once for `\"\"`, once for `\"h\"`, once for `\"hi\"`. Each run calls `addEventListener` with a **new** arrow function, so the browser does not treat it as a duplicate. The effect returns no cleanup, so the older listeners are never removed. Three listeners are now on `window`.\n\nEach listener is a closure over the `text` of the render that created it. When Enter is pressed, the `keydown` event bubbles from the input to `window`, and listeners on the same target run in the order they were added: `save \"\"`, `save \"h\"`, `save \"hi\"`. (The `keydown` events for `h` and `i` also reached the listeners, but they skip anything that is not Enter.)\n\nAdding a dependency fixes *which* value a new listener sees, but not the leak. Return a cleanup so the previous listener is removed before the next one is added:\n\n```jsx\nuseEffect(() => {\n  const onKeyDown = (e) => {\n    if (e.key === 'Enter') console.log('save', JSON.stringify(text));\n  };\n  window.addEventListener('keydown', onKeyDown);\n  return () => window.removeEventListener('keydown', onKeyDown);\n}, [text]);\n```\n\nWith the cleanup, the same keystrokes log only `save \"hi\"`. In development StrictMode the buggy version would be even noisier: the extra setup run on mount adds a second `\"\"` listener.",
+    "references": [
+      "https://react.dev/learn/synchronizing-with-effects#subscribing-to-events",
+      "https://react.dev/reference/react/useEffect#parameters",
+      "https://developer.mozilla.org/en-US/docs/Web/API/EventTarget/addEventListener#multiple_identical_event_listeners"
+    ]
+  },
+  {
+    "id": "react-016",
+    "difficulty": "hard",
+    "topic": "Stale closures: useCallback deps",
+    "kind": "output",
+    "question": "The user types `Ann` into the Name field, **then** types `ann@x.io` into the Email field, and then clicks **Submit**. What object is passed to `send`? Assume React 19, not in StrictMode, no React Compiler, and `send` simply records its argument.",
+    "snippets": [
+      {
+        "lang": "jsx",
+        "code": "function SignupForm() {\n  const [name, setName] = useState('');\n  const [email, setEmail] = useState('');\n\n  const submit = useCallback(() => {\n    send({ name, email });\n  }, [name]);\n\n  return (\n    <>\n      <input value={name} onChange={e => setName(e.target.value)} />\n      <input value={email} onChange={e => setEmail(e.target.value)} />\n      <button onClick={submit}>Submit</button>\n    </>\n  );\n}"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "`{ name: 'Ann', email: '' }`"
+      },
+      {
+        "id": "b",
+        "text": "`{ name: 'Ann', email: 'ann@x.io' }`",
+        "why": "Tempting if you think `useCallback` only keeps the function's identity stable while the body somehow reads the latest state. It doesn't: on re-renders where `name` is unchanged, React returns the **same function object** it cached earlier, and that function closes over the `email` from the render that created it. Nothing in the dependency list changed while the email was typed, so the cached function still sees `email === ''`."
+      },
+      {
+        "id": "c",
+        "text": "`{ name: '', email: '' }`",
+        "why": "Tempting if you think `useCallback` captures the first render forever (as it would with `[]`). But `name` is listed as a dependency, so every keystroke in the Name field produces a new function. The last one was created in the render where `name` became `'Ann'`, so it sees the current name."
+      },
+      {
+        "id": "d",
+        "text": "`{ name: '', email: 'ann@x.io' }`",
+        "why": "This mixes up which value gets refreshed. Only a change to a listed dependency (`name`) makes React return a new function. Typing in the Email field changes `email`, which is not listed, so React keeps returning the function created when `name` became `'Ann'`, with the name current and the email stale."
+      }
+    ],
+    "answer": "a",
+    "explanation": "`useCallback(fn, deps)` returns the function it cached on an earlier render as long as every value in `deps` is unchanged (compared with `Object.is`). When a dependency changes, it returns the `fn` from the current render instead. Each `fn` is a closure over the state values of the render that created it.\n\n- Typing `Ann` changes `name` on each keystroke, so `submit` is recreated each time. The last version is created in the render where `name === 'Ann'` and `email === ''`.\n- Typing `ann@x.io` only changes `email`, which is not in `[name]`, so every one of those renders gets back that same cached function, still holding `email === ''`.\n- Clicking Submit runs it and sends `{ name: 'Ann', email: '' }`.\n\nIf the user edited the name again afterwards, `submit` would be recreated and pick up the current email, which is why this kind of bug can seem intermittent.\n\nFix: list every reactive value the callback reads, `[name, email]`. The `react-hooks/exhaustive-deps` lint rule flags the missing `email`.",
+    "references": [
+      "https://react.dev/reference/react/useCallback",
+      "https://react.dev/learn/state-as-a-snapshot"
+    ]
+  },
+  {
+    "id": "react-017",
+    "difficulty": "hard",
+    "topic": "Stale closures: state vs refs",
+    "kind": "output",
+    "question": "The user clicks the button **three times** in under one second. Each click is a separate event, and the component re-renders after each click before the next one happens. The app is **not** in StrictMode. What do the three timeouts log, in order?",
+    "snippets": [
+      {
+        "lang": "jsx",
+        "code": "function Counter() {\n  const [count, setCount] = useState(0);\n  const clicksRef = useRef(0);\n\n  function handleClick() {\n    setCount(count + 1);\n    clicksRef.current += 1;\n    setTimeout(() => {\n      console.log(count, clicksRef.current);\n    }, 1000);\n  }\n\n  return <button onClick={handleClick}>Clicked {count} times</button>;\n}"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "`3 3`, then `3 3`, then `3 3`",
+        "why": "Tempting if you think the timeout reads `count` when it fires, after all three updates. But `count` is a plain `const` captured by the closure of the render that created the handler. `setCount` schedules a new render with a new `count`; it never changes the variable an old closure already holds."
+      },
+      {
+        "id": "b",
+        "text": "`0 1`, then `1 2`, then `2 3`",
+        "why": "Tempting if you assume a ref is snapshotted per render the way state is. It isn't: `useRef` returns the **same** object on every render, and all three timeouts read `.current` from that one object when they fire, after all three clicks have incremented it to 3."
+      },
+      {
+        "id": "c",
+        "text": "`0 3`, then `0 3`, then `0 3`",
+        "why": "Tempting if you picture the classic stale closure of an effect with `[]` deps, where one callback keeps seeing the first render's values forever. Event handlers are different: every render creates a new `handleClick` that closes over **that** render's `count`, and React uses the latest one. The second click runs the handler from the render where `count` is 1, and the third from the render where it is 2."
+      },
+      {
+        "id": "d",
+        "text": "`0 3`, then `1 3`, then `2 3`"
+      }
+    ],
+    "answer": "d",
+    "explanation": "State and refs behave differently inside closures:\n\n- **State is a snapshot.** Each render gets its own `count` constant, and the `handleClick` created during that render closes over it. Click 1 runs the handler from the render where `count` is 0, click 2 the one where it is 1, and click 3 the one where it is 2. Each timeout keeps the `count` of the render that created it, so the first values are 0, 1, 2. The button ends up showing \"Clicked 3 times\".\n- **A ref is one shared mutable object.** `useRef` returns the same object on every render, and mutating `.current` doesn't cause a re-render. By the time the first timeout fires (about one second after the first click), all three clicks have already run `clicksRef.current += 1`, so every timeout reads 3.\n\nIf a delayed callback needs the latest value, read it from a ref (or use the updater form `setCount(c => c + 1)` when the goal is only to compute the next state). Reading state inside the callback gives you the value from the render that created it.",
+    "references": [
+      "https://react.dev/learn/state-as-a-snapshot",
+      "https://react.dev/learn/referencing-values-with-refs",
+      "https://react.dev/reference/react/useRef"
+    ]
+  },
+  {
+    "id": "react-018",
+    "difficulty": "medium",
+    "topic": "Re-renders: memo and inline props",
+    "kind": "debug",
+    "question": "`Chart` is expensive, so it is wrapped in `memo`. Chart uses no context and has no state of its own. Yet the React Profiler shows `Chart` re-rendering on **every keystroke** in the search box. The app does **not** use the React Compiler and is **not** in StrictMode. Which diagnosis and fix is correct?",
+    "snippets": [
+      {
+        "lang": "jsx",
+        "code": "const Chart = memo(function Chart({ options, onSelect }) {\n  // ...expensive drawing\n  return <canvas onClick={() => onSelect('p1')} />;\n});\n\nfunction Dashboard() {\n  const [query, setQuery] = useState('');\n  const [selected, setSelected] = useState(null);\n\n  return (\n    <>\n      <input value={query} onChange={(e) => setQuery(e.target.value)} />\n      <Chart\n        options={{ color: 'red' }}\n        onSelect={(p) => setSelected(p)}\n      />\n    </>\n  );\n}"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "`memo` compares props deeply, so `options` is equal every time; the culprit is that the `setSelected` function gets a new identity on each render",
+        "why": "Tempting because `options` \"looks\" unchanged. But `memo` compares each prop with `Object.is`, so a fresh object literal is never equal to the previous one. And the setter returned by `useState` is the opposite of the problem: React keeps its identity stable across renders. What changes is the arrow function wrapping it."
+      },
+      {
+        "id": "b",
+        "text": "Only `onSelect` is the problem: wrapping it in `useCallback` makes `Chart` skip the keystroke re-renders",
+        "why": "Half right. `onSelect` is a new function each render, and `useCallback` does stabilize it. But `options={{ color: 'red' }}` is still a new object every render, so the shallow comparison still fails and `Chart` keeps re-rendering. Both props have to be stable."
+      },
+      {
+        "id": "c",
+        "text": "`memo` can never skip a component that receives function props, because functions can't be compared; the only fix is to drop `memo` and wrap the `<Chart … />` element in `useMemo`",
+        "why": "Functions compare fine with `Object.is`: the same function reference is equal to itself. `memo` works with function props as long as the reference is stable (`useCallback`, a hoisted function, or the `useState` setter itself). Memoizing the JSX element can also skip a child render, but it is not the only fix, and the stated reason is false."
+      },
+      {
+        "id": "d",
+        "text": "Both props are new references on every `Dashboard` render (a new object and a new arrow function), so `memo`'s shallow comparison fails; both must be made stable, e.g. hoist the options object outside the component and use `useCallback` (or pass `setSelected` directly)"
+      }
+    ],
+    "answer": "d",
+    "explanation": "`memo` skips a re-render only when **every** prop is equal to its previous value, compared one by one with `Object.is` (a shallow comparison). It does not look inside objects.\n\nEach keystroke updates `query`, so `Dashboard` re-renders and evaluates its JSX again:\n\n- `{ color: 'red' }` creates a **new object**, which is not `Object.is`-equal to last render's object.\n- `(p) => setSelected(p)` creates a **new function**, also not equal to the previous one.\n\nOne changed prop is enough to make `memo` re-render `Chart`, so fixing only one of them changes nothing. Stabilize both:\n\n```jsx\nconst CHART_OPTIONS = { color: 'red' }; // module level: same object forever\n\nfunction Dashboard() {\n  // ...\n  const handleSelect = useCallback((p) => setSelected(p), []);\n  return <Chart options={CHART_OPTIONS} onSelect={handleSelect} />;\n}\n```\n\nIf the options depend on props or state, use `useMemo(() => ({ color }), [color])` instead of hoisting. Here `onSelect={setSelected}` also works, because the `useState` setter has a stable identity.",
+    "references": [
+      "https://react.dev/reference/react/memo#minimizing-props-changes",
+      "https://react.dev/reference/react/useCallback#skipping-re-rendering-of-components",
+      "https://react.dev/reference/react/useMemo#skipping-re-rendering-of-components"
+    ]
+  },
+  {
+    "id": "react-019",
+    "difficulty": "medium",
+    "topic": "Re-renders: same-state bailout",
+    "kind": "debug",
+    "question": "In this React 19 app, clicking **Add Bread** does nothing visible: the list keeps showing only `Milk`, no matter how many times you click, and the console shows no errors. Nothing else in the app updates this component. What is the cause?",
+    "snippets": [
+      {
+        "lang": "jsx",
+        "code": "function ShoppingList() {\n  const [items, setItems] = useState(['Milk']);\n\n  function addBread() {\n    items.push('Bread');\n    setItems(items);\n  }\n\n  return (\n    <>\n      <ul>\n        {items.map((item, i) => <li key={i}>{item}</li>)}\n      </ul>\n      <button onClick={addBread}>Add Bread</button>\n    </>\n  );\n}"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "State updates are asynchronous, so each click's update shows up one click late: after the second click the list would show `Milk` and `Bread`.",
+        "why": "Tempting because `push` really did change the array, and \"setState is async\" is a common explanation for stale-looking UI. But the problem isn't timing. Every click passes the same array object again, so every click is ignored the same way. The list stays at `Milk` after the second, third, or tenth click."
+      },
+      {
+        "id": "b",
+        "text": "The list uses the index as `key`, so React thinks the `<li>` elements are unchanged and doesn't add new ones.",
+        "why": "Tempting because index keys are a well-known source of list bugs. But those bugs involve reordering, or inserting/removing in the middle, for items with their own state or DOM state. Appending to the end with index keys works fine: the new item gets a new key and a new `<li>`. Here React never gets as far as comparing keys, because the update is skipped before any re-render."
+      },
+      {
+        "id": "c",
+        "text": "`items` is still the same array object, so React compares the new state to the old one with `Object.is`, finds them identical, and skips the re-render."
+      },
+      {
+        "id": "d",
+        "text": "`push` returns the array's new length, so `items` becomes a number and the list can't render the new item.",
+        "why": "Tempting if you remember that `push` returns the new length (it does) and confuse this with the bug `setItems(items.push('Bread'))`, which really would set the state to a number (and then `items.map` would throw on the next render). Here the return value of `push` is ignored, and `setItems` receives the array itself."
+      }
+    ],
+    "answer": "c",
+    "explanation": "When you call a state setter, React compares the new value with the current state using `Object.is`. If they are the same, React skips re-rendering the component and its children, so the DOM is not updated.\n\n`items.push('Bread')` mutates the existing array in place. `setItems(items)` then passes that **same** array object back, so `Object.is(oldItems, newItems)` is `true` and the update is ignored. Each later click does the same thing, so the list never changes.\n\nThe data did change, though: the array now really contains the extra `Bread` entries. If something else later re-renders `ShoppingList` (for example, another state update in it), all of them suddenly appear at once, which makes this bug confusing to track down.\n\nFix: treat state as read-only and pass a **new** array:\n\n```jsx\nfunction addBread() {\n  setItems([...items, 'Bread']);\n}\n```\n\nThe same rule applies to objects: `obj.count++; setObj(obj)` is skipped for the same reason; use `setObj({ ...obj, count: obj.count + 1 })` instead.",
+    "references": [
+      "https://react.dev/reference/react/useState#ive-updated-the-state-but-the-screen-doesnt-update",
+      "https://react.dev/learn/updating-arrays-in-state",
+      "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/push"
+    ]
+  },
+  {
+    "id": "react-020",
+    "difficulty": "hard",
+    "topic": "Re-renders: children as props",
+    "kind": "output",
+    "question": "`App` is mounted, then the user clicks the **Show/Hide** button **3 times**. How many times is `Expensive render` logged in total, counting the initial mount? Assume React 19, **not** in StrictMode, no React Compiler, and nothing else causes `App` to re-render.",
+    "snippets": [
+      {
+        "lang": "jsx",
+        "code": "function Expensive() {\n  console.log('Expensive render');\n  return <p>Expensive content</p>;\n}\n\nfunction Toggle({ children }) {\n  const [open, setOpen] = useState(false);\n  console.log('Toggle render');\n  return (\n    <div>\n      <button onClick={() => setOpen(o => !o)}>\n        {open ? 'Hide' : 'Show'}\n      </button>\n      <div>{children}</div>\n    </div>\n  );\n}\n\nfunction App() {\n  return <Toggle><Expensive /></Toggle>;\n}"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "4 times: once on mount, then once per click",
+        "why": "Tempting because of the rule \"when a component re-renders, everything inside it re-renders too\". That rule applies to elements the component **creates** in its own render. `<Expensive />` is created by `App`, not by `Toggle`; `Toggle` only places the `children` it received. `App` never re-renders, so `Toggle` keeps receiving the same element object, and React skips `Expensive`."
+      },
+      {
+        "id": "b",
+        "text": "1 time: only on the initial mount"
+      },
+      {
+        "id": "c",
+        "text": "4 times, and it would drop to 1 only if `Expensive` were wrapped in `memo`",
+        "why": "Tempting because `memo` is the usual tool for skipping re-renders. It isn't needed here: `memo` compares props of a **new** element, but in this case React gets back the very same element object (`children` comes from `App`'s render, which never ran again), so `Expensive` is already skipped. The react.dev `memo` page recommends exactly this pattern (passing JSX as `children`) as a way to avoid needing `memo`."
+      },
+      {
+        "id": "d",
+        "text": "2 times: once on mount, then once on the first click",
+        "why": "Tempting if you imagine React re-rendering the children once when the parent's state first changes and then caching them. React has no such \"first change\" step: every click re-renders `Toggle` the same way, and on every one of them (including the first) `children` is the same element object from `App`'s only render, so `Expensive` is skipped each time."
+      }
+    ],
+    "answer": "b",
+    "explanation": "A state update re-renders the component that owns the state (`Toggle`) and the elements **that component's render creates**. It does not re-run the parent (`App`).\n\n- `<Expensive />` is a React element created when `App` renders. It reaches `Toggle` as the `children` prop.\n- Each click calls `setOpen`, so `Toggle` re-renders (`Toggle render` is logged 4 times in total: mount + 3 clicks).\n- `App` does not re-render, so `children` is the **same element object** every time. When React reconciles `Toggle`'s output and finds the identical element (same props object) for `Expensive`, with no pending update or context change inside it, it bails out and does not call `Expensive` again.\n\nResult: `Expensive render` is logged once, on mount.\n\nContrast: if `Toggle` itself wrote `<div><Expensive /></div>` instead of `{children}`, every render of `Toggle` would create a new element with a new props object, and `Expensive render` would be logged 4 times (unless `Expensive` were wrapped in `memo`). Likewise, if `App` re-rendered, it would create a new `<Expensive />` element and `Expensive` would render again.\n\nThis is why \"lift content up and pass it as `children`\" is a standard way to keep a stateful wrapper's updates from re-rendering expensive content, without `memo`.",
+    "references": [
+      "https://react.dev/reference/react/memo",
+      "https://react.dev/learn/passing-props-to-a-component#passing-jsx-as-children",
+      "https://react.dev/learn/render-and-commit"
+    ]
+  },
+  {
+    "id": "react-021",
+    "difficulty": "hard",
+    "topic": "Re-renders: context and memo",
+    "kind": "output",
+    "question": "React 19 (so `<ThemeContext value={...}>` is the provider), development build, **not** in StrictMode, no React Compiler. All hooks and `memo` are imported from `react`. After the first render has logged its lines, the console is cleared and the user clicks **Go dark** once. What does the console show?",
+    "snippets": [
+      {
+        "lang": "jsx",
+        "code": "const ThemeContext = createContext('light');\n\nfunction Button() {\n  const theme = useContext(ThemeContext);\n  console.log('Button render', theme);\n  return <button className={theme}>Save</button>;\n}\n\nconst Toolbar = memo(function Toolbar() {\n  console.log('Toolbar render');\n  return <nav><Button /></nav>;\n});\n\nexport default function App() {\n  const [theme, setTheme] = useState('light');\n  console.log('App render', theme);\n  return (\n    <ThemeContext value={theme}>\n      <button onClick={() => setTheme('dark')}>Go dark</button>\n      <Toolbar />\n    </ThemeContext>\n  );\n}"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "`App render dark`, then `Button render dark`"
+      },
+      {
+        "id": "b",
+        "text": "`App render dark` only",
+        "why": "Tempting if you think `memo` is a wall that stops all rendering below it. `memo` only skips a re-render that would be caused by the parent re-rendering with the same props, and it does let `Toolbar` bail out here. But `Button` reads `ThemeContext` with `useContext`, and a context value change schedules a re-render of every component that reads that context, wherever it sits under the provider. `memo` on an ancestor does not block that."
+      },
+      {
+        "id": "c",
+        "text": "`App render dark`, then `Toolbar render`, then `Button render dark`",
+        "why": "Tempting if you believe a context change re-renders the whole subtree under the provider. It doesn't: React finds the components that actually read the context and re-renders only those (plus whatever they render). `Toolbar` doesn't read the context, and its props are unchanged (it has none), so `memo` lets it skip. Without `memo`, `Toolbar` would log, but only because its parent `App` re-rendered, not because of the context."
+      },
+      {
+        "id": "d",
+        "text": "`Button render dark` only",
+        "why": "Tempting if you think only the context consumers re-render when a context value changes. That is true for components between the provider and the consumer, but `App` is not re-rendering because of context: it called `setTheme`, so its **own state** changed, and a state update to a different value re-renders the component that owns that state. That render is what passes the new `value` to the provider in the first place."
+      }
+    ],
+    "answer": "a",
+    "explanation": "Two separate re-render triggers are at work, and `memo` only affects one of them:\n\n- **`App` re-renders because its own state changed.** `setTheme('dark')` changes `theme` from `'light'` to `'dark'`, so `App` runs again and logs `App render dark`. It now passes `'dark'` to the provider.\n- **`Toolbar` skips because of `memo`.** `App`'s re-render would normally re-render its children too. `Toolbar` is wrapped in `memo` and receives the same props as last time (none), so React reuses its previous result and `Toolbar render` is **not** logged.\n- **`Button` re-renders because the context value changed.** The provider's `value` changed (React compares old and new values with `Object.is`), so React re-renders every component below the provider that reads `ThemeContext`, even when an ancestor such as `Toolbar` bailed out. `Button` logs `Button render dark` and the DOM gets `class=\"dark\"`.\n\nIn short: `memo` blocks re-renders that come from a parent re-rendering with equal props. It does not block re-renders caused by a component's own state or by a context it reads. That is also why memoizing a component doesn't help if the component itself calls `useContext` on a value that changes often.",
+    "references": [
+      "https://react.dev/reference/react/useContext",
+      "https://react.dev/reference/react/memo",
+      "https://react.dev/reference/react/createContext"
+    ]
+  },
+  {
+    "id": "react-022",
+    "difficulty": "hard",
+    "topic": "Keys: state preserved by position",
+    "kind": "output",
+    "question": "The scoreboard first shows Mia's counter. The user clicks **+1** twice, then clicks **Next player**. What does the heading show now?",
+    "snippets": [
+      {
+        "lang": "jsx",
+        "code": "function Scoreboard() {\n  const [isFirst, setIsFirst] = useState(true);\n  return (\n    <div>\n      {isFirst ? <Counter player=\"Mia\" /> : <Counter player=\"Leo\" />}\n      <button onClick={() => setIsFirst(!isFirst)}>Next player</button>\n    </div>\n  );\n}\n\nfunction Counter({ player }) {\n  const [score, setScore] = useState(0);\n  return (\n    <section>\n      <h2>{player}: {score}</h2>\n      <button onClick={() => setScore(score + 1)}>+1</button>\n    </section>\n  );\n}"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "`Leo: 2`"
+      },
+      {
+        "id": "b",
+        "text": "`Leo: 0`, because each branch of the ternary creates its own `Counter`",
+        "why": "It looks like two different components in the source, but React doesn't track which JSX expression produced an element. It only sees that the first child of `<div>` was a `Counter` and still is a `Counter` (same type, same position, no key), so it keeps the existing instance and its state. You get `Leo: 0` only if the two are told apart, e.g. with different keys."
+      },
+      {
+        "id": "c",
+        "text": "React logs a warning (or throws) because a component is rendered conditionally",
+        "why": "The rules of hooks forbid calling **hooks** conditionally inside a component. Choosing which **element** to render with a ternary is completely normal, and each `Counter` still calls `useState` unconditionally. React renders this without any warning."
+      },
+      {
+        "id": "d",
+        "text": "`Mia: 2`, because the preserved instance keeps its old props",
+        "why": "Preserving state doesn't freeze props. React re-renders the same `Counter` instance with the new props, so `player` is now `\"Leo\"`; only the `useState` value carries over."
+      }
+    ],
+    "answer": "a",
+    "explanation": "React ties state to a component's **position in the UI tree** (plus its type and key), not to the line of JSX that created it. Both branches of the ternary produce a `Counter` with no key as the first child of the same `<div>`, so from React's point of view nothing was unmounted: the same `Counter` is re-rendered with a new `player` prop.\n\n- Its `score` state (2) is preserved.\n- Its props update, so the name changes to \"Leo\".\n\nResult: `Leo: 2`. Clicking **Next player** again shows `Mia: 2`, because the two players share one counter.\n\nTo give each player separate state, make React see two different components:\n\n```jsx\n// Different keys: switching unmounts one and mounts the other\n{isFirst ? <Counter key=\"Mia\" player=\"Mia\" /> : <Counter key=\"Leo\" player=\"Leo\" />}\n\n// Or different positions\n{isFirst && <Counter player=\"Mia\" />}\n{!isFirst && <Counter player=\"Leo\" />}\n```\n\nWith either fix, switching players resets the score to 0 (the unmounted counter's state is destroyed).",
+    "references": [
+      "https://react.dev/learn/preserving-and-resetting-state"
+    ]
+  },
+  {
+    "id": "react-023",
+    "difficulty": "medium",
+    "topic": "Keys: Fragments in lists",
+    "kind": "debug",
+    "question": "Every `item.id` is unique and stable, yet in development React logs: **Each child in a list should have a unique \"key\" prop.** Which change removes the warning **without adding any extra elements to the rendered DOM**?",
+    "snippets": [
+      {
+        "lang": "jsx",
+        "code": "function Glossary({ items }) {\n  return (\n    <dl>\n      {items.map((item) => (\n        <>\n          <dt key={item.id}>{item.term}</dt>\n          <dd>{item.definition}</dd>\n        </>\n      ))}\n    </dl>\n  );\n}"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "Add `key={item.id}` to the `<dd>` as well, so both elements of each pair have a key",
+        "why": "Tempting if you think React wants a key on every element it renders from the list. But the list children are still the unkeyed Fragments, so the warning stays. It also creates a new problem: `<dt>` and `<dd>` are siblings inside the same Fragment with the same key, so React additionally warns \"Encountered two children with the same key\"."
+      },
+      {
+        "id": "b",
+        "text": "Fragments can never take a key, so wrap each pair in `<div key={item.id}>` instead",
+        "why": "The premise is false: only the short `<>...</>` syntax can't take a key; the explicit `<Fragment key={...}>` form can. A keyed `<div>` does silence the warning (and HTML allows a `<div>` to group a `<dt>`/`<dd>` pair inside a `<dl>`), but it adds one element per item to the DOM, which the question rules out and which can break styling that targets `dl > dt` or lays out the `<dl>` as a grid."
+      },
+      {
+        "id": "c",
+        "text": "Switch to the map index: `items.map((item, i) => ...)` with `key={i}` on the `<dt>`",
+        "why": "Tempting if you read the warning as \"your keys are not unique\". The ids are already unique; the warning is about the array's direct children having **no** key. Moving a different key onto the `<dt>` leaves the Fragments unkeyed, so the warning still appears, and index keys are a worse choice anyway when the list can be reordered or filtered."
+      },
+      {
+        "id": "d",
+        "text": "Import `Fragment` from `react` and move the key onto it: `<Fragment key={item.id}>...</Fragment>`"
+      }
+    ],
+    "answer": "d",
+    "explanation": "A key must go on the element that `map` returns, because those are the children of the list. Here each callback returns a Fragment, so the array React receives is a list of Fragments, and none of them has a key. The `key` on `<dt>` is one level deeper: it only identifies that `<dt>` among its siblings inside its own Fragment, so it doesn't satisfy the list's key requirement.\n\nThe short syntax `<>...</>` doesn't accept any attributes, so it can't carry a key. The explicit form can:\n\n```jsx\nimport { Fragment } from 'react';\n\nitems.map((item) => (\n  <Fragment key={item.id}>\n    <dt>{item.term}</dt>\n    <dd>{item.definition}</dd>\n  </Fragment>\n))\n```\n\nA Fragment renders no DOM node, so the output is still `<dl><dt>…</dt><dd>…</dd><dt>…</dt><dd>…</dd></dl>`, with no wrapper elements.",
+    "references": [
+      "https://react.dev/reference/react/Fragment#rendering-a-list-of-fragments",
+      "https://react.dev/learn/rendering-lists#keeping-list-items-in-order-with-key"
+    ]
+  },
+  {
+    "id": "react-024",
+    "difficulty": "expert",
+    "topic": "Keys: remounting with key",
+    "kind": "output",
+    "question": "The app runs on React 19 and is **not** in StrictMode. After the first render, the console shows `init a` and `effect a`. Then the **new session** button is clicked once. Which lines are logged as a result of that click, in order?",
+    "snippets": [
+      {
+        "lang": "jsx",
+        "code": "function Timer({ label }) {\n  const [startedAt] = useState(() => {\n    console.log('init', label);\n    return Date.now();\n  });\n  useEffect(() => {\n    console.log('effect', label);\n    return () => console.log('cleanup', label);\n  }, []);\n  return <p>{label} started at {startedAt}</p>;\n}\n\nfunction App() {\n  const [sessionId, setSessionId] = useState('a');\n  return (\n    <>\n      <button onClick={() => setSessionId('b')}>new session</button>\n      <Timer key={sessionId} label={sessionId} />\n    </>\n  );\n}"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "`cleanup a`, `init b`, `effect b`",
+        "why": "This follows the intuitive \"unmount the old one, then mount the new one\" story. But React doesn't tear anything down before rendering. It first renders the new tree (which calls the new `Timer` and runs its `useState` initializer), and only changes what's on screen during the commit. Effect cleanups run after that, so `init b` comes before `cleanup a`."
+      },
+      {
+        "id": "b",
+        "text": "Nothing is logged",
+        "why": "This would be right without the `key`: the same component type at the same position keeps its state, the initializer only runs on mount, and an effect with `[]` doesn't re-run on updates. But the key changed from `'a'` to `'b'`, and React treats a different key as a different component. The old `Timer` is unmounted and a brand-new one is mounted."
+      },
+      {
+        "id": "c",
+        "text": "`init b`, `cleanup a`, `effect b`"
+      },
+      {
+        "id": "d",
+        "text": "`init b`",
+        "why": "This assumes a key change only resets state, while an effect with `[]` has already \"run once\" and won't run again. But `[]` means once per mounted instance, not once per position in the tree. The new `Timer` is a fresh instance, so its effect runs on mount, and the old instance's effect is cleaned up because that instance unmounts."
+      }
+    ],
+    "answer": "c",
+    "explanation": "React uses the `key` (together with the component type and position) to decide whether an element is the same component as before. Changing `key` from `'a'` to `'b'` makes React treat it as a different component: the old `Timer` is unmounted and a new one is mounted, with fresh state and fresh effects.\n\nThe order comes from React's render and commit phases:\n- **Render:** React calls the new `Timer`. Because this is its first render, the lazy `useState` initializer runs: `init b`. The old instance is still mounted at this point.\n- **Commit:** React updates the DOM (the old `<p>` is replaced by the new one).\n- **Effects:** React runs the cleanups of effects that are going away before running any new effects. The unmounted instance's cleanup logs `cleanup a`, then the new instance's effect logs `effect b`.\n\nThe cleanup logs `a` because it is a closure created when the old instance's effect ran, with `label` equal to `'a'`.\n\nThis is the standard way to reset a component's state when an identity like a session or user id changes: give it `key={id}` instead of resetting state in an effect. Just remember that it also re-runs the initializer and every mount effect, and in StrictMode development builds you'd see extra initializer and effect calls on top of these.",
+    "references": [
+      "https://react.dev/learn/preserving-and-resetting-state#option-2-resetting-state-with-a-key",
+      "https://react.dev/learn/you-might-not-need-an-effect#resetting-all-state-when-a-prop-changes",
+      "https://react.dev/reference/react/useEffect#parameters"
+    ]
+  },
+  {
+    "id": "react-025",
+    "difficulty": "hard",
+    "topic": "State batching & updater functions",
+    "kind": "output",
+    "question": "React 19, root created with `createRoot`, **not** in StrictMode. `saveDraft()` returns a promise that resolves successfully after a short delay. After the first render, the console shows `render 0 false`. The user then clicks **Save** once. What is logged next, in order?",
+    "snippets": [
+      {
+        "lang": "jsx",
+        "code": "function Editor() {\n  const [count, setCount] = useState(0);\n  const [saved, setSaved] = useState(false);\n  console.log('render', count, saved);\n\n  async function handleSave() {\n    await saveDraft();\n    setCount(count + 1);\n    setSaved(true);\n    console.log('after sets', count, saved);\n  }\n\n  return <button onClick={handleSave}>Save</button>;\n}"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "`render 1 false`, then `render 1 true`, then `after sets 0 false`",
+        "why": "This is what React 17 (legacy `ReactDOM.render`) did: it only batched updates inside React event handlers, and code after `await` runs later in a promise callback, outside the handler, so each setter re-rendered synchronously. Since React 18, `createRoot` batches automatically everywhere, including after `await`, in timeouts and in native event listeners, so the two setters cause one render."
+      },
+      {
+        "id": "b",
+        "text": "`after sets 0 false`, then `render 1 true`"
+      },
+      {
+        "id": "c",
+        "text": "`after sets 1 true`, then `render 1 true`",
+        "why": "Tempting if you think setters assign to the variables once you're outside the original click handler. They never do: `count` and `saved` are `const` values captured from the render that created `handleSave`, so they stay `0` and `false` for the whole function, before or after `await`. The new values only show up in the next render."
+      },
+      {
+        "id": "d",
+        "text": "`render 1 true`, then `after sets 1 true`",
+        "why": "This assumes the `await` makes the setters apply and render synchronously. They don't: setters only queue updates, and React re-renders after your code has finished running, so `after sets` is logged first. And even a synchronous re-render couldn't change the `const` variables this function closed over; they would still read `0 false`."
+      }
+    ],
+    "answer": "b",
+    "explanation": "Two separate ideas are at work.\n\n**1. Automatic batching (React 18+).** With `createRoot`, React batches state updates no matter where they happen: React event handlers, code after `await`, `setTimeout`, native event listeners. `setCount(...)` and `setSaved(true)` don't render anything immediately; they queue updates, and React processes them together in **one** re-render after the handler code has finished. So there is a single `render 1 true`, never an in-between `render 1 false`.\n\n**2. State is a snapshot.** `count` and `saved` are constants belonging to the render that created `handleSave` (`0` and `false`). Calling a setter doesn't change them, and the `await` doesn't either. So the log right after the setters prints `after sets 0 false`.\n\nIf you need the value you just set, keep it in a local variable (`const next = count + 1; setCount(next);`). If you truly need the DOM updated synchronously before continuing (rare), wrap the update in `flushSync` from `react-dom`.",
+    "references": [
+      "https://react.dev/learn/queueing-a-series-of-state-updates",
+      "https://react.dev/learn/state-as-a-snapshot",
+      "https://react.dev/blog/2022/03/29/react-v18#new-feature-automatic-batching"
+    ]
+  },
+  {
+    "id": "react-026",
+    "difficulty": "expert",
+    "topic": "State batching: flushSync",
+    "kind": "output",
+    "question": "The button starts at `0` and the user clicks it **once**. What do the two `console.log` calls print? Assume React 19 in the browser, `flushSync` imported from `react-dom`, **not** in StrictMode, and no React Compiler.",
+    "snippets": [
+      {
+        "lang": "jsx",
+        "code": "import { useState, useRef } from 'react';\nimport { flushSync } from 'react-dom';\n\nfunction Counter() {\n  const [count, setCount] = useState(0);\n  const ref = useRef(null);\n\n  function handleClick() {\n    flushSync(() => setCount(c => c + 1));\n    console.log('A', count, ref.current.textContent);\n    setCount(c => c + 1);\n    console.log('B', count, ref.current.textContent);\n  }\n\n  return <button ref={ref} onClick={handleClick}>{count}</button>;\n}"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "`A 1 1` then `B 2 2`",
+        "why": "Tempting because `flushSync` really does re-render and update the DOM before it returns, so it feels like `count` should be fresh too. But `count` is a `const` captured by this render's `handleClick`. Re-rendering calls `Counter` again and creates a **new** `count` and a new handler; the handler that is already running keeps reading the old value, `0`. And the second `setCount` is not flushed synchronously, so the DOM can't show `2` at line B either."
+      },
+      {
+        "id": "b",
+        "text": "`A 0 1` then `B 0 1`"
+      },
+      {
+        "id": "c",
+        "text": "`A 0 0` then `B 0 0`",
+        "why": "Tempting if you think of `flushSync` as just a priority hint and assume the DOM never changes until the event handler finishes. That is how a normal, batched `setCount` behaves, but `flushSync` is the exception: React renders and commits the updates inside its callback to the DOM **before `flushSync` returns**, so `ref.current.textContent` is already `\"1\"` at line A."
+      },
+      {
+        "id": "d",
+        "text": "`A 0 1` then `B 0 2`",
+        "why": "Tempting because it gets line A right and assumes that once `flushSync` has run, the rest of the handler is also processed synchronously. `flushSync` only affects updates made **inside its callback**. The second `setCount` is outside it, so it is batched as usual and React re-renders after the handler, so at line B the DOM still shows `1`."
+      }
+    ],
+    "answer": "b",
+    "explanation": "Two separate things are being logged, and `flushSync` affects only one of them.\n\n- **The DOM (`ref.current.textContent`)**: `flushSync(fn)` makes React process the updates queued inside `fn` and commit them to the DOM before `flushSync` returns. So right after it, the button's text is `\"1\"`.\n- **The `count` variable**: state is a snapshot per render. `handleClick` was created during the render where `count` was `0`, and a re-render doesn't change that `const`; it produces a new `count` in a new call of `Counter`. So `count` is `0` at both A and B.\n\nThe second `setCount(c => c + 1)` is outside `flushSync`, so it is batched like any normal update: the DOM still says `\"1\"` at line B. After the handler finishes, React re-renders with `count` = 2 (the updater receives the already-committed `1`), and the button shows `2`.\n\nTakeaway: `flushSync` is for cases where you need the **DOM** updated immediately (e.g. scrolling to a just-added item). If you need the new **value** in the handler, compute it yourself (`const next = count + 1`) instead of reading state. react.dev also notes `flushSync` is uncommon and can hurt performance.",
+    "references": [
+      "https://react.dev/reference/react-dom/flushSync",
+      "https://react.dev/learn/state-as-a-snapshot",
+      "https://react.dev/learn/queueing-a-series-of-state-updates"
+    ]
+  },
+  {
+    "id": "react-027",
+    "difficulty": "medium",
+    "topic": "Controlled vs uncontrolled inputs",
+    "kind": "misconception",
+    "question": "A teammate says: \"`value={initialName}` just pre-fills the field. The user can edit it, and on submit we'll read what they typed through the ref.\" `initialName` is always a non-empty string (for example `\"Ann\"`), and the app runs a React 19 **development** build. What actually happens when the user tries to type in this field?",
+    "snippets": [
+      {
+        "lang": "jsx",
+        "code": "function NameField({ initialName }) {\n  const inputRef = useRef(null);\n\n  return <input ref={inputRef} value={initialName} />;\n}"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "The text never changes: React puts `initialName` back after every keystroke, and the console warns that a `value` prop was provided without an `onChange` handler"
+      },
+      {
+        "id": "b",
+        "text": "It works as the teammate says: the field starts with `initialName`, stays editable, and the ref sees the typed text",
+        "why": "That is how `defaultValue` behaves, which is why the mix-up is so common. But a defined `value` prop makes the input **controlled**: React owns the displayed text and keeps it equal to `value`. With no `onChange` to update that value, the edits are thrown away."
+      },
+      {
+        "id": "c",
+        "text": "React throws an error during render because a controlled input requires an `onChange` handler",
+        "why": "React is strict about this, but only with a warning. In development it logs a `console.error` message and still renders the input normally; nothing throws, and production builds stay silent."
+      },
+      {
+        "id": "d",
+        "text": "The user can type freely, but the next time `NameField` re-renders, React resets the field back to `initialName`",
+        "why": "Tempting, because controlled values usually get \"applied\" during a render. But React also restores a controlled input right after each `input` event it handles, without waiting for a re-render. Each keystroke is undone immediately, so the edits are never visible at all."
+      }
+    ],
+    "answer": "a",
+    "explanation": "Passing a defined `value` (anything other than `undefined` or `null`) makes the input **controlled**. React treats `value` as the single source of truth for what the field shows. When the user types, the browser changes the DOM value and fires an `input` event; React handles that event, calls `onChange` if there is one, and then restores the DOM value to the current `value` prop. Here there is no `onChange` and nothing changes `initialName`, so each keystroke is undone right away and the field behaves as if it were read-only. Reading `inputRef.current.value` later just returns `initialName`.\n\nIn development React also logs: \"You provided a `value` prop to a form field without an `onChange` handler. This will render a read-only field. If the field should be mutable use `defaultValue`. Otherwise, set either `onChange` or `readOnly`.\"\n\nFixes, depending on intent:\n- Uncontrolled (what the teammate wanted): `<input ref={inputRef} defaultValue={initialName} />`, then read `inputRef.current.value` on submit.\n- Controlled: keep the text in state, e.g. `const [name, setName] = useState(initialName)` with `value={name}` and `onChange={(e) => setName(e.target.value)}`.\n- Intentionally read-only: add `readOnly`, which also silences the warning.",
+    "references": [
+      "https://react.dev/reference/react-dom/components/input#controlling-an-input-with-a-state-variable",
+      "https://react.dev/reference/react-dom/components/input#providing-an-initial-value-for-an-input",
+      "https://react.dev/reference/react-dom/components/input#my-text-input-doesnt-update-when-i-type-into-it"
+    ]
+  },
+  {
+    "id": "react-028",
+    "difficulty": "expert",
+    "topic": "Controlled checkboxes",
+    "kind": "output",
+    "question": "A terms checkbox starts unchecked. The user clicks the checkbox **twice**. What does the user see after the second click? Assume React 19 in a browser, `useState` is imported, and nothing else updates `agreed`.",
+    "snippets": [
+      {
+        "lang": "jsx",
+        "code": "function Terms() {\n  const [agreed, setAgreed] = useState(false);\n  return (\n    <label>\n      <input\n        type=\"checkbox\"\n        checked={agreed}\n        onChange={e => setAgreed(e.target.value)}\n      />\n      <span>{agreed ? 'Agreed' : 'Not yet'}</span>\n    </label>\n  );\n}"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "`Not yet`, and the box is unchecked: it toggled on and then off again",
+        "why": "Tempting because `checked` + `onChange` + `setState(e.target.…)` looks like the standard controlled-input pattern, so it reads as a normal toggle. But the handler stores `e.target.value`, not `e.target.checked`. `value` does not change when the box is clicked, so every click stores the same string `'on'` and `agreed` never goes back to a falsy value."
+      },
+      {
+        "id": "b",
+        "text": "`Not yet`, and the box is unchecked: a checkbox with no `value` attribute has `e.target.value === ''`, which is falsy, so nothing ever changes",
+        "why": "Tempting because a text input with no `value` really does report `''`. Checkboxes are different: per the HTML spec, when the `value` attribute is missing, the `value` property returns the string `'on'` (the same string a form submits for a checked box with no `value`). `'on'` is truthy, so the first click already shows `Agreed`."
+      },
+      {
+        "id": "c",
+        "text": "`Agreed`, but the box is unchecked: React's `checked` prop only accepts booleans, so the string is ignored and the DOM checkbox toggles freely",
+        "why": "Tempting if you assume a non-boolean `checked` makes React give up control. React does not ignore it: it sets the DOM `checked` property from the prop's truthiness, so `'on'` means checked (React 19 logs no warning for this). Because `checked` is not `null`/`undefined`, the input stays controlled, and after each change event React resets the box to match the prop. The text and the box therefore always agree: both say \"checked\"."
+      },
+      {
+        "id": "d",
+        "text": "`Agreed`, and the box stays checked: it can never be unchecked"
+      }
+    ],
+    "answer": "d",
+    "explanation": "For a checkbox, the on/off state lives in `e.target.checked`. `e.target.value` is the `value` attribute as a string, and when that attribute is missing it defaults to `'on'` (HTML spec; MDN: \"the default value for the checkbox is `on`\"). Clicking never changes `value`.\n\n- **First click:** the browser checks the box and fires `change`. The handler calls `setAgreed('on')`. `'on'` is truthy, so the span shows `Agreed` and React renders the input with `checked='on'`, which it applies as checked.\n- **Second click:** the browser unchecks the box and fires `change`. The handler reads `e.target.value`, which is still `'on'`, and calls `setAgreed('on')` again. State does not change, so the `checked` prop is still truthy, and React restores the controlled input to checked after the event.\n\nResult after two clicks (and any number of later clicks): `agreed === 'on'`, the text reads `Agreed`, and the box is checked. Running this in React 19 confirms it and logs no warning.\n\nFix: read the boolean, `onChange={e => setAgreed(e.target.checked)}`. Use `e.target.value` for a checkbox only when you need its `value` attribute, e.g. to identify which box in a group was toggled.",
+    "references": [
+      "https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/input/checkbox#value",
+      "https://html.spec.whatwg.org/multipage/input.html#dom-input-value-default-on",
+      "https://react.dev/reference/react-dom/components/input#controlling-an-input-with-a-state-variable"
+    ]
+  },
+  {
+    "id": "react-029",
+    "difficulty": "hard",
+    "topic": "defaultValue and prop changes",
+    "kind": "debug",
+    "question": "A client-rendered React 19 app (`createRoot`). The editor first shows Ann. The user clicks **Bob** in the sidebar **without ever touching** the Name field. `EditUser` now receives Bob's data, but the Name field still shows `Ann`. What is the cause, and what is the right fix?",
+    "snippets": [
+      {
+        "lang": "jsx",
+        "code": "const users = [{ id: 1, name: 'Ann' }, { id: 2, name: 'Bob' }];\n\nfunction EditUser({ user }) {\n  return (\n    <form>\n      <label>\n        Name <input name=\"name\" defaultValue={user.name} />\n      </label>\n      <button>Save</button>\n    </form>\n  );\n}\n\nfunction App() {\n  const [selected, setSelected] = useState(users[0]);\n  return (\n    <>\n      <Sidebar users={users} onSelect={setSelected} />\n      <EditUser user={selected} />\n    </>\n  );\n}"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "React skipped re-rendering `EditUser` because its prop is an object. Wrap `EditUser` in `memo` so React notices that `user` changed.",
+        "why": "Tempting because \"the screen didn't update\" sounds like \"the component didn't re-render\". But when `App`'s state changes, React re-renders `App` and its children by default; `EditUser` does re-render with `user.name === 'Bob'`. `memo` can only make React **skip** a render when the props are unchanged (compared with `Object.is`); it never makes a component re-render more. Here Bob is a different object, so a memoized `EditUser` re-renders too, and the field still shows `Ann`."
+      },
+      {
+        "id": "b",
+        "text": "React can't change an uncontrolled input. Copy the prop into state with `const [name, setName] = useState(user.name)` and render `<input value={name} onChange={e => setName(e.target.value)} />`.",
+        "why": "Tempting because a controlled input is a real alternative, and the code looks like the textbook pattern. But `useState(user.name)` only uses its argument on the **first** render. When `EditUser` re-renders with Bob, `name` keeps its existing state, `'Ann'`, so the field still shows `Ann`. The same bug just moves into state. It works only if you also reset the state when the user changes, for example with a `key` on `EditUser`."
+      },
+      {
+        "id": "c",
+        "text": "`defaultValue` only sets the field's initial value; React keeps the same `<input>` and doesn't overwrite what it displays. Render `<EditUser key={selected.id} user={selected} />` so switching users remounts the form."
+      },
+      {
+        "id": "d",
+        "text": "The input is uncontrolled. Switch it to `<input value={user.name} />`; no `onChange` is needed because the parent owns the data.",
+        "why": "Tempting because the field does show `Bob` after switching, so it looks fixed. But a `value` with no `onChange` makes a controlled input that React keeps pinned to `user.name`: every keystroke is reverted, so the field is effectively read-only, and React warns in development (\"You provided a `value` prop to a form field without an `onChange` handler. This will render a read-only field...\"). A controlled input needs an `onChange` that updates the state feeding `value`."
+      }
+    ],
+    "answer": "c",
+    "explanation": "`defaultValue` is React's version of the HTML `value` **attribute**: it sets the *initial* value of an uncontrolled input. After that, the DOM owns what's in the field.\n\nWhat happens when Bob is selected:\n\n- `App` re-renders, and `EditUser` re-renders with `user.name === 'Bob'`. Nothing is skipped.\n- The `<input>` is the same type in the same position, so React keeps the **same DOM node** and only updates its props.\n- For a changed `defaultValue`, React updates the node's `defaultValue` (the `value` attribute, now `\"Bob\"`) but leaves its current `.value` alone.\n- The field displays the current value, which is still `Ann`. This happens even though the user never typed: React set `.value` itself when it mounted the input, and once a script has set an input's value, the browser stops syncing the displayed value from the `value` attribute (the HTML spec's \"dirty value flag\").\n\nThe fix is to tell React this is a different form by giving it a key:\n\n```jsx\n<EditUser key={selected.id} user={selected} />\n```\n\nWhen the key changes, React unmounts the old `EditUser` (its DOM and any state inside it) and mounts a fresh one, so the input starts at `Bob`. This also resets every other field and piece of state in the form, which is usually what you want when switching records. The alternative is a fully controlled input (state plus `onChange`) whose state you reset when the selected user changes; the key is usually simpler.",
+    "references": [
+      "https://react.dev/reference/react-dom/components/input",
+      "https://react.dev/learn/preserving-and-resetting-state",
+      "https://html.spec.whatwg.org/multipage/input.html#concept-fe-dirty"
+    ]
+  },
+  {
+    "id": "react-030",
+    "difficulty": "medium",
+    "topic": "Number inputs return strings",
+    "kind": "output",
+    "question": "`QuantityPicker` is mounted and shows `Next: 2`. The user selects the whole content of the number field (the `1`) and types `3`, so the field now contains just `3`. What does the `<p>` show after that keystroke?",
+    "snippets": [
+      {
+        "lang": "jsx",
+        "code": "function QuantityPicker() {\n  const [qty, setQty] = useState(1);\n\n  return (\n    <>\n      <input\n        type=\"number\"\n        value={qty}\n        onChange={(e) => setQty(e.target.value)}\n      />\n      <p>Next: {qty + 1}</p>\n    </>\n  );\n}"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "`Next: 4`",
+        "why": "Tempting because the input is `type=\"number\"`, so it feels like it should hand back a number. It doesn't: an input's `value` property is always a string, whatever its `type`, and React passes the native `e.target` through without converting anything. After the keystroke `qty` is the string `\"3\"`, not the number `3`."
+      },
+      {
+        "id": "b",
+        "text": "`Next: NaN`",
+        "why": "Tempting if you think mixing a string and a number in arithmetic gives `NaN`. That is true for operators like `*` or `-` with a non-numeric string, but `+` with a string operand does **string concatenation**: `\"3\" + 1` is `\"31\"`. (`NaN` would show up if you used `e.target.valueAsNumber` and the field were emptied.)"
+      },
+      {
+        "id": "c",
+        "text": "`Next: 31`"
+      },
+      {
+        "id": "d",
+        "text": "`Next: 2`",
+        "why": "Tempting if you think a controlled input ignores typing, or that React only accepts a number for a number input. A controlled input is only stuck when there is no `onChange` that updates its state. Here `onChange` calls `setQty`, so the component re-renders with the new value and the `<p>` changes."
+      }
+    ],
+    "answer": "c",
+    "explanation": "On the first render `qty` is the **number** `1`, so `qty + 1` is `2`. When the user types, `onChange` runs with `e.target.value`, and an `<input>`'s `value` is **always a string**, even for `type=\"number\"`. React does not convert it. So `qty` becomes the string `\"3\"`.\n\nWith a string operand, `+` concatenates instead of adding: `\"3\" + 1` is `\"31\"`, and the paragraph shows `Next: 31`.\n\nFixes:\n- Convert when storing: `setQty(Number(e.target.value))`, or read the numeric accessor `e.target.valueAsNumber`.\n- Mind the empty field: when the user clears it, `e.target.value` is `\"\"`, `Number(\"\")` is `0`, and `valueAsNumber` is `NaN`. A common pattern is to keep the raw string in state for the input and convert it where you do the math.",
+    "references": [
+      "https://developer.mozilla.org/en-US/docs/Web/HTML/Element/input/number#value",
+      "https://developer.mozilla.org/en-US/docs/Web/API/HTMLInputElement/valueAsNumber",
+      "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Addition",
+      "https://react.dev/reference/react-dom/components/input#controlling-an-input-with-a-state-variable"
+    ]
+  }
+]

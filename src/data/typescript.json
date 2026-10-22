@@ -1,0 +1,847 @@
+[
+  {
+    "id": "typescript-001",
+    "difficulty": "medium",
+    "topic": "Excess property checks",
+    "kind": "concept",
+    "question": "With default compiler settings, which lines compile?",
+    "snippets": [
+      {
+        "lang": "ts",
+        "code": "interface Point {\n  x: number;\n  y: number;\n}\n\nconst p3 = { x: 1, y: 2, z: 3 };\n\nconst a: Point = { x: 1, y: 2, z: 3 }; // line 1\nconst b: Point = p3;                    // line 2"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "Both lines compile, because TypeScript is structural and extra properties are fine",
+        "why": "Structural typing does allow extra properties in general (line 2), but an object literal assigned directly to a typed target gets an extra check, excess property checking, so line 1 errors."
+      },
+      {
+        "id": "b",
+        "text": "Both lines error, because `z` isn't part of `Point`",
+        "why": "`p3` isn't a fresh object literal anymore. Its type `{ x: number; y: number; z: number }` has every property `Point` needs, so it's assignable."
+      },
+      {
+        "id": "c",
+        "text": "Line 1 errors; line 2 compiles"
+      },
+      {
+        "id": "d",
+        "text": "Line 2 errors; line 1 compiles",
+        "why": "It's the other way around: the excess property check applies to the fresh object literal on line 1, not to the variable on line 2."
+      }
+    ],
+    "answer": "c",
+    "explanation": "TypeScript's type system is structural: a value is assignable if it has at least the required properties, so line 2 is fine.\n\nBut **fresh** object literals get **excess property checking**: since nothing else can ever see the extra `z`, it's almost certainly a typo or bug. Line 1 errors with: *Object literal may only specify known properties, and 'z' does not exist in type 'Point'.*\n\nA literal is only \"fresh\" where it's written directly at the assignment, argument or return site. Once it has been stored in `p3`, it's just a value of type `{ x: number; y: number; z: number }`, and the normal structural rule applies.",
+    "references": [
+      "https://www.typescriptlang.org/docs/handbook/2/objects.html#excess-property-checks",
+      "https://www.typescriptlang.org/docs/handbook/type-compatibility.html"
+    ]
+  },
+  {
+    "id": "typescript-002",
+    "difficulty": "hard",
+    "topic": "Narrowing with typeof null",
+    "kind": "debug",
+    "question": "With `strict: true`, where does TypeScript report an error?",
+    "snippets": [
+      {
+        "lang": "ts",
+        "code": "function len(x: string | string[] | null) {\n  if (typeof x === 'object') {\n    return x.length;\n  }\n  return x.length;\n}"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "Nowhere. Inside the `if`, `x` is narrowed to `string[]`",
+        "why": "In JavaScript `typeof null` is `\"object\"`, and TypeScript models that: `typeof x === 'object'` narrows to `string[] | null`."
+      },
+      {
+        "id": "b",
+        "text": "On the first `return`: 'x' is possibly 'null'"
+      },
+      {
+        "id": "c",
+        "text": "On the second `return`: 'x' is possibly 'null'",
+        "why": "After the `if` block returns, the remaining type is just `string`, because `null` was handled by the `object` branch."
+      },
+      {
+        "id": "d",
+        "text": "On both `return` statements",
+        "why": "The second `return` is safe: once both `string[]` and `null` are ruled out by the `typeof` check, only `string` is left."
+      }
+    ],
+    "answer": "b",
+    "explanation": "`typeof null === 'object'` is a long-standing JavaScript quirk, and TypeScript's narrowing follows the real runtime behavior. Inside the `if`, `x` is `string[] | null`, so `x.length` errors with *'x' is possibly 'null'*. This catches a real bug: `len(null)` would throw at runtime.\n\nFix: handle `null` first (`if (x === null) return 0;`), then check `Array.isArray(x)` (or `typeof x === 'object'`). A guard like `if (x && typeof x === 'object')` on its own isn't enough: it fixes the first `return`, but `null` then falls through and the *possibly 'null'* error moves to the second `return`.",
+    "references": [
+      "https://www.typescriptlang.org/docs/handbook/2/narrowing.html#typeof-type-guards",
+      "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/typeof#typeof_null"
+    ]
+  },
+  {
+    "id": "typescript-003",
+    "difficulty": "hard",
+    "topic": "Literal types, widening & as const",
+    "kind": "concept",
+    "question": "Given `function req(method: 'GET' | 'POST') {}`, which of these calls compile?",
+    "snippets": [
+      {
+        "lang": "ts",
+        "code": "let a = 'GET';\nconst b = 'GET';\nconst c = { method: 'GET' };\nconst d = { method: 'GET' } as const;\n\nreq(a);\nreq(b);\nreq(c.method);\nreq(d.method);"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "Only `req(d.method)`",
+        "why": "`const b = 'GET'` already has the literal type `\"GET\"`. A `const` primitive can never change, so TypeScript doesn't widen it to `string`."
+      },
+      {
+        "id": "b",
+        "text": "`req(b)`, `req(c.method)`, and `req(d.method)`",
+        "why": "Object properties are mutable, so `c.method` is widened to `string` (you could later write `c.method = 'DELETE'`). `string` isn't assignable to `'GET' | 'POST'`."
+      },
+      {
+        "id": "c",
+        "text": "All four",
+        "why": "`let a` is widened to `string` because it could later be reassigned to any string."
+      },
+      {
+        "id": "d",
+        "text": "`req(b)` and `req(d.method)` only"
+      }
+    ],
+    "answer": "d",
+    "explanation": "Without a type annotation or `as const`, TypeScript widens literal types in mutable positions (`let` variables, object properties):\n\n- `let a = 'GET'` → `string` (reassignable).\n- `const b = 'GET'` → `\"GET\"` (can't change).\n- `const c = { method: 'GET' }` → `{ method: string }` (properties are mutable even in a `const` object).\n- `as const` → `{ readonly method: \"GET\" }`: readonly, and literal types are preserved.\n\nOnly `\"GET\"` is assignable to `'GET' | 'POST'`, so `req(b)` and `req(d.method)` compile. The other two error with *Argument of type 'string' is not assignable to parameter of type '\"GET\" | \"POST\"'.*",
+    "references": [
+      "https://www.typescriptlang.org/docs/handbook/2/everyday-types.html#literal-inference",
+      "https://www.typescriptlang.org/docs/handbook/release-notes/typescript-3-4.html#const-assertions"
+    ]
+  },
+  {
+    "id": "typescript-004",
+    "difficulty": "expert",
+    "topic": "Distributive conditional types",
+    "kind": "output",
+    "question": "What are `A`, `B` and `C`?",
+    "snippets": [
+      {
+        "lang": "ts",
+        "code": "type ToArray<T> = T extends unknown ? T[] : never;\ntype NoDistribute<T> = [T] extends [unknown] ? T[] : never;\n\ntype A = ToArray<string | number>;\ntype B = NoDistribute<string | number>;\ntype C = ToArray<never>;"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "`A` = `string[] | number[]`, `B` = `(string | number)[]`, `C` = `never`"
+      },
+      {
+        "id": "b",
+        "text": "`A` and `B` are both `(string | number)[]`, `C` = `never[]`",
+        "why": "A conditional type whose checked type is a *naked* type parameter (`T extends ...`) distributes over unions: it's applied to `string` and to `number` separately, and the results are unioned. So `A` is `string[] | number[]`, not `(string | number)[]`."
+      },
+      {
+        "id": "c",
+        "text": "`A` = `string[] | number[]`, `B` = `(string | number)[]`, `C` = `never[]`",
+        "why": "`A` and `B` are right, but `never` is the empty union. A distributive conditional type maps over the union's members, and there are none, so the result is `never`. The `T[]` branch is never evaluated."
+      },
+      {
+        "id": "d",
+        "text": "`A` = `never`, `B` = `(string | number)[]`, `C` = `never`",
+        "why": "Every non-`never` type extends `unknown`, so for `A` the true branch is taken for both `string` and `number`; nothing there becomes `never`."
+      }
+    ],
+    "answer": "a",
+    "explanation": "Conditional types **distribute over unions** when the checked type is a naked type parameter:\n\n`ToArray<string | number>` = `ToArray<string> | ToArray<number>` = `string[] | number[]`.\n\nWrapping the type parameter in a one-element tuple, `[T] extends [unknown]`, turns distribution off, so the union is checked as a whole: `(string | number)[]`.\n\nThe edge case: `never` behaves like an empty union, so distributing over it produces no members at all, and `ToArray<never>` is `never`, not `never[]`. (`NoDistribute<never>` would be `never[]`, since `[never] extends [unknown]` is checked as one type.) This is a common surprise in utility types like `IsNever<T> = T extends never ? true : false`, which gives `never` instead of `true`.\n\nWhy it matters: `string[] | number[]` is an array of all strings or all numbers; `(string | number)[]` can mix them.",
+    "references": [
+      "https://www.typescriptlang.org/docs/handbook/2/conditional-types.html#distributive-conditional-types"
+    ]
+  },
+  {
+    "id": "typescript-005",
+    "difficulty": "hard",
+    "topic": "keyof a union",
+    "kind": "misconception",
+    "question": "What is `K`?",
+    "snippets": [
+      {
+        "lang": "ts",
+        "code": "type Cat = { name: string; meow(): void };\ntype Dog = { name: string; bark(): void };\n\ntype K = keyof (Cat | Dog);"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "`\"name\" | \"meow\" | \"bark\"`",
+        "why": "That's `keyof Cat | keyof Dog`, which you'd get from `keyof (Cat & Dog)`. A value of type `Cat | Dog` might be either one, so only keys present on *every* member are safe to access."
+      },
+      {
+        "id": "b",
+        "text": "`never`",
+        "why": "The two types share the key `name`, so the result isn't empty."
+      },
+      {
+        "id": "c",
+        "text": "`\"name\"`"
+      },
+      {
+        "id": "d",
+        "text": "`\"meow\" | \"bark\"`",
+        "why": "Those are exactly the keys that are *not* common to both types, so they're the ones excluded."
+      }
+    ],
+    "answer": "c",
+    "explanation": "`keyof (A | B)` gives the keys **common** to all members: `keyof A & keyof B`. If you have a `Cat | Dog`, you can only safely read properties that exist on both, so only `\"name\"` is allowed.\n\nIt's the mirror image of intersections: `keyof (A & B)` is `keyof A | keyof B`, because a value of type `A & B` has every property of both.",
+    "references": [
+      "https://www.typescriptlang.org/docs/handbook/2/keyof-types.html",
+      "https://www.typescriptlang.org/docs/handbook/2/everyday-types.html#working-with-union-types"
+    ]
+  },
+  {
+    "id": "typescript-006",
+    "difficulty": "medium",
+    "topic": "Narrowing with the in operator",
+    "kind": "debug",
+    "question": "With `strict: true` (TypeScript 5.x), `tsc` reports exactly one error for this code, on `pet.swim()`: *Cannot invoke an object which is possibly 'undefined'.* Why?",
+    "snippets": [
+      {
+        "lang": "ts",
+        "code": "type Fish = { swim(): void };\ntype Bird = { fly(): void; swim?: () => void };\n\nfunction move(pet: Fish | Bird) {\n  if ('swim' in pet) {\n    pet.swim(); // error\n  } else {\n    pet.fly();\n  }\n}"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "`Bird` declares an optional `swim`, so it stays in the `true` branch: `pet` is still `Fish | Bird` there, and `swim` may be `undefined`"
+      },
+      {
+        "id": "b",
+        "text": "The `in` operator doesn't narrow unions at all, so `pet` is `Fish | Bird` in both branches",
+        "why": "Tempting because the `true` branch really is still `Fish | Bird`. But `in` does narrow: in the `else` branch `pet` is just `Bird`, which is why `pet.fly()` compiles. If `pet` were still `Fish | Bird` there, `pet.fly()` would error because `Fish` has no `fly`."
+      },
+      {
+        "id": "c",
+        "text": "`pet.swim()` is fine; the real problem is that a `Fish` can reach the `else` branch, so `pet.fly()` is unsafe",
+        "why": "`Fish` declares `swim` as required, so TypeScript removes it from the `else` branch. Only types where `swim` is optional or missing can reach `else`, which here is just `Bird`, and `Bird` has `fly`. That line compiles."
+      },
+      {
+        "id": "d",
+        "text": "`in` narrowing only works on class instances; plain object types need a user-defined type guard like `pet is Fish`",
+        "why": "Tempting if you associate narrowing with `instanceof`. But `in` narrowing works on any object types, including type aliases and interfaces. The `else` branch here is narrowed to `Bird` without any type guard."
+      }
+    ],
+    "answer": "a",
+    "explanation": "For `'swim' in pet`, TypeScript narrows each branch like this:\n\n- `true` branch: union members that declare `swim`, **required or optional**. That's both `Fish` and `Bird`, so `pet` stays `Fish | Bird`.\n- `false` branch: members where `swim` is **optional or missing**. `Fish` requires it, so only `Bird` is left.\n\nIn the `true` branch, `pet.swim` has type `(() => void) | undefined` (from `Bird`), so calling it is error TS2722. This matches runtime reality: an object like `{ fly() {}, swim: undefined }` is a valid `Bird`, `'swim' in` it is `true`, and calling `swim` would throw.\n\nFixes:\n\n- Add a discriminant (`kind: 'fish'` / `kind: 'bird'`) and check `pet.kind === 'fish'`. This narrows cleanly in both branches.\n- Or call it as `pet.swim?.()` if a bird that may or may not swim should still work.\n\nNote that replacing the condition with `typeof pet.swim === 'function'` makes the `pet.swim()` call compile, but the `else` branch then errors on `pet.fly()`: that check narrows the property `pet.swim`, not `pet` itself, so `pet` stays `Fish | Bird` there.",
+    "references": [
+      "https://www.typescriptlang.org/docs/handbook/2/narrowing.html#the-in-operator-narrowing",
+      "https://www.typescriptlang.org/docs/handbook/2/narrowing.html#discriminated-unions"
+    ]
+  },
+  {
+    "id": "typescript-007",
+    "difficulty": "expert",
+    "topic": "Aliased conditions & narrowing",
+    "kind": "concept",
+    "question": "Compiled with TypeScript 5.8 and `strict: true`, exactly one of these four functions fails to type-check. Which one?",
+    "snippets": [
+      {
+        "lang": "ts",
+        "code": "type Res =\n  | { status: 'ok'; data: string }\n  | { status: 'error'; error: Error };\n\nfunction flag(r: Res) {\n  const isOk = r.status === 'ok';\n  if (isOk) r.data.toUpperCase();\n}\n\nfunction copy(r: Res) {\n  const kind = r.status;\n  if (kind === 'ok') r.data.toUpperCase();\n}\n\nfunction destructure(r: Res) {\n  const { status } = r;\n  if (status === 'ok') r.data.toUpperCase();\n}\n\nfunction retry(r: Res, next: Res) {\n  const isOk = r.status === 'ok';\n  if (isOk) r.data.toUpperCase();\n  r = next;\n}"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "`flag`: a check stored in a variable never narrows `r`",
+        "why": "This is tempting because it was true before TypeScript 4.4, and many older answers online still say so. Since 4.4, when you test a `const` with no type annotation that holds a type guard, TypeScript looks at its initializer. If the narrowed reference is a `const`, a `readonly` property, or a parameter that is never assigned, it narrows. Here `r` is never assigned, so `r.data` is fine inside `if (isOk)`."
+      },
+      {
+        "id": "b",
+        "text": "`copy`: copying `r.status` into `kind` loses the link to `r`",
+        "why": "This is tempting because `kind` looks like an independent string with no connection to `r`. Since 4.4, TypeScript treats `const kind = r.status` (a `const` with no type annotation) as an alias for `r.status`, so `kind === 'ok'` narrows `r` to the `'ok'` member. Declare it with `let kind` and the narrowing is gone."
+      },
+      {
+        "id": "c",
+        "text": "`destructure`: destructuring `status` disconnects it from `r`",
+        "why": "This is tempting because destructuring seems to detach the value from the object. Since 4.4, TypeScript treats `const { status } = r` as an alias for `r.status`, so `status === 'ok'` narrows `r` exactly like `r.status === 'ok'` would. With `let { status } = r` it would fail."
+      },
+      {
+        "id": "d",
+        "text": "`retry`: `r.data` errors because `r` is reassigned later in the function"
+      }
+    ],
+    "answer": "d",
+    "explanation": "`retry` fails with `error TS2339: Property 'data' does not exist on type 'Res'`. The `r = next` comes **after** the check, but that doesn't matter.\n\nSince TypeScript 4.4, a type guard stored in a constant (an *aliased condition*) still narrows, but only under these conditions:\n\n- The alias must be a `const` with no type annotation. `let isOk = ...` or `const isOk: boolean = ...` is just a `boolean`, and nothing narrows.\n- The reference being narrowed must be a `const` variable, a `readonly` property, or a parameter with **no assignments anywhere in the function body**. An assignment before the check, after it, or inside a nested closure all disqualify the parameter.\n\nIn `retry`, `r = next` makes `r` a modified parameter, so `if (isOk)` says nothing about `r`. Inside the `if`, `r` is still `Res`, and `data` exists on only one member.\n\nThe other three compile. `flag` uses the aliased condition on a never-assigned parameter. `copy` and `destructure` use 4.4's *extracted discriminant* narrowing: a `const` copy (`const kind = r.status`) or a `const` destructuring (`const { status } = r`) acts as an alias for `r.status`. Change either declaration to `let` and it stops narrowing.\n\nFixes for `retry`:\n\n```ts\n// test the property directly; direct checks narrow even if r is reassigned\nif (r.status === 'ok') r.data.toUpperCase();\n\n// or never reassign the parameter; use a new const instead\nconst current = next;\n```\n\nOne quirk: in tsc 5.8 the no-reassignment rule is enforced for aliased conditions like `isOk`, but adding `r = next` to `copy` or `destructure` still compiles. The documented rule (`const`, `readonly`, or un-modified parameter) comes from the 4.4 release notes for aliased conditions.",
+    "references": [
+      "https://www.typescriptlang.org/docs/handbook/release-notes/typescript-4-4.html#control-flow-analysis-of-aliased-conditions-and-discriminants",
+      "https://www.typescriptlang.org/docs/handbook/2/narrowing.html"
+    ]
+  },
+  {
+    "id": "typescript-008",
+    "difficulty": "hard",
+    "topic": "Assertion functions (asserts)",
+    "kind": "debug",
+    "question": "With `strict: true` (TypeScript 5.x), `tsc` reports an error on the `assertString(x)` call and `'x' is of type 'unknown'` on the `return` line. What's the cause, and what fixes it?",
+    "snippets": [
+      {
+        "lang": "ts",
+        "code": "const assertString = (v: unknown): asserts v is string => {\n  if (typeof v !== \"string\") throw new TypeError(\"Expected a string\");\n};\n\nfunction shout(x: unknown) {\n  assertString(x);\n  return x.toUpperCase();\n}"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "An assertion function must return a `boolean`; the body should `return typeof v === \"string\"`",
+        "why": "Tempting because type predicates (`v is string`, without `asserts`) do return a boolean. An `asserts` function works the other way: it returns normally (its return type is effectively `void`) when the condition holds and throws when it doesn't. Adding `return typeof v === \"string\"` makes things worse: *Type 'boolean' is not assignable to type 'void'.*"
+      },
+      {
+        "id": "b",
+        "text": "The call has to be used as a condition: `if (assertString(x)) return x.toUpperCase();`",
+        "why": "That's how you'd use a type predicate (`v is string`). An assertion function returns `void`, so `tsc` rejects the `if` with *An expression of type 'void' cannot be tested for truthiness*, and `x` is still `unknown` inside it. Assertion calls are meant to be standalone statements; the narrowing applies to the code after them."
+      },
+      {
+        "id": "c",
+        "text": "`assertString`'s type is inferred, not declared. Give the `const` an explicit function type (or use a `function` declaration) and the call narrows `x`"
+      },
+      {
+        "id": "d",
+        "text": "Arrow functions can never be assertion functions; only a `function` declaration can have an `asserts` return type",
+        "why": "A `function` declaration is one fix, but the arrow itself is fine. `const assertString: (v: unknown) => asserts v is string = (v) => { ... };` compiles and narrows `x`. The problem is the missing type annotation on the variable, not the arrow syntax (an unannotated `const` holding a `function` expression fails the same way)."
+      }
+    ],
+    "answer": "c",
+    "explanation": "TypeScript only treats a call as an assertion if **every name in the call target is declared with an explicit type**. The full error on the call is: *Assertions require every name in the call target to be declared with an explicit type annotation.* (TS2775). Because the assertion isn't applied, `x` stays `unknown` and `x.toUpperCase()` also errors.\n\nHere the arrow function has an `asserts` return type, but the variable `assertString` has no annotation: its type is inferred from the initializer, so the call doesn't count. The rule exists so control-flow analysis can spot assertion calls without first inferring types.\n\nEither fix works:\n\n```ts\n// 1. function declaration: its signature is explicit\nfunction assertString(v: unknown): asserts v is string {\n  if (typeof v !== \"string\") throw new TypeError(\"Expected a string\");\n}\n\n// 2. annotate the const with a function type\nconst assertString: (v: unknown) => asserts v is string = (v) => {\n  if (typeof v !== \"string\") throw new TypeError(\"Expected a string\");\n};\n```\n\nThe same rule applies to every name in a dotted call: if `helpers` is an unannotated object literal, `helpers.assertString(x)` hits TS2775 too, even when `assertString` itself is a `function` declaration.\n\nThese are compile-time errors only. At runtime the original code still throws for non-strings and works for strings; you just lose the narrowing.",
+    "references": [
+      "https://www.typescriptlang.org/docs/handbook/release-notes/typescript-3-7.html#assertion-functions",
+      "https://www.typescriptlang.org/docs/handbook/2/narrowing.html#using-type-predicates"
+    ]
+  },
+  {
+    "id": "typescript-009",
+    "difficulty": "medium",
+    "topic": "Narrowing lost in callbacks",
+    "kind": "debug",
+    "question": "With `strict: true` (TypeScript 5.x), where does `tsc` report an error, and what is the cleanest fix?",
+    "snippets": [
+      {
+        "lang": "ts",
+        "code": "type Opts = { prefix?: string };\n\nfunction label(opts: Opts, items: string[]) {\n  if (opts.prefix) {\n    const width = opts.prefix.length; // line A\n    return items.map(i => opts.prefix.toUpperCase() + i.padStart(width)); // line B\n  }\n  return items;\n}"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "On the `if (opts.prefix)` line: an optional property can't be truth-tested, so write `if (opts.prefix !== undefined)`",
+        "why": "Truthiness checks on optional properties are allowed and are one of the most common ways to narrow. And switching to `!== undefined` changes nothing here: line A is still fine and line B still reports *'opts.prefix' is possibly 'undefined'*, because the problem is the callback, not the kind of check."
+      },
+      {
+        "id": "b",
+        "text": "Only on line B, inside the arrow function: *'opts.prefix' is possibly 'undefined'*. Copy the value into a `const` before the check (`const { prefix } = opts; if (prefix) { ... }`) and use `prefix` in the callback"
+      },
+      {
+        "id": "c",
+        "text": "Nowhere: inside the `if` block `opts.prefix` is narrowed to `string`, including inside the `map` callback",
+        "why": "This is the misconception the question targets. Narrowing applies to code that runs directly in the block (line A compiles), but TypeScript doesn't carry the narrowing of a property path like `opts.prefix` into a function created there, because that function could run after `opts.prefix` has been set back to `undefined`. `tsc` reports TS18048 on line B."
+      },
+      {
+        "id": "d",
+        "text": "On both line A and line B: a narrowed optional property must be re-asserted with `opts.prefix!` at every use",
+        "why": "Line A is fine: it runs directly inside the `if`, so `opts.prefix` is `string` there. Adding `opts.prefix!` on line B would silence the error, but it isn't required anywhere and it turns off the check instead of fixing the cause; copying to a `const` keeps full type safety."
+      }
+    ],
+    "answer": "b",
+    "explanation": "The `if (opts.prefix)` check narrows `opts.prefix` from `string | undefined` to `string`, so line A compiles. Line B is different: the arrow function is a separate function, and TypeScript doesn't track *when* a callback will run. By then, any code holding a reference to the same object could have set `opts.prefix = undefined`, so narrowing of a property access path is reset inside the callback and you get **TS18048: 'opts.prefix' is possibly 'undefined'**. (`map` happens to call it immediately, but TypeScript doesn't model that.) Marking the property `readonly` doesn't change this; in TypeScript 5.8 it still errors.\n\nA `const` can never be reassigned, so its narrowing *is* kept inside closures:\n\n```ts\nfunction label(opts: Opts, items: string[]) {\n  const { prefix } = opts; // or: const prefix = opts.prefix;\n  if (prefix) {\n    const width = prefix.length;\n    return items.map(i => prefix.toUpperCase() + i.padStart(width));\n  }\n  return items;\n}\n```\n\nSince TypeScript 5.4 the same applies to `let` variables and parameters that are not assigned anywhere after the closure is created. That improvement does not cover property paths like `opts.prefix`, which is why the original code still errors in every 5.x version.",
+    "references": [
+      "https://www.typescriptlang.org/docs/handbook/2/narrowing.html",
+      "https://www.typescriptlang.org/docs/handbook/release-notes/typescript-5-4.html#preserved-narrowing-in-closures-following-last-assignments"
+    ]
+  },
+  {
+    "id": "typescript-010",
+    "difficulty": "hard",
+    "topic": "Truthiness narrowing (0 and '')",
+    "kind": "output",
+    "question": "With `strict: true` (TypeScript 5.x), what type does TypeScript give `v` on the marked line in the `else` branch?",
+    "snippets": [
+      {
+        "lang": "ts",
+        "code": "function label(v: string | number | null) {\n  if (v) {\n    return `Value: ${v}`;\n  } else {\n    v; // <- type of v here?\n    return 'No value';\n  }\n}"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "`null`",
+        "why": "Tempting because `if (v)` looks like a null check, so the `else` seems to be \"the null case\". But `''` and `0` (and `NaN`) are falsy too, so a `string` or `number` can reach the `else` branch. TypeScript keeps `string` and `number` there for exactly that reason."
+      },
+      {
+        "id": "b",
+        "text": "`string | number | null`"
+      },
+      {
+        "id": "c",
+        "text": "`\"\" | 0 | null`",
+        "why": "Tempting because TypeScript does have the literal types `\"\"` and `0`, and it does narrow literal unions this way. But truthiness narrowing only keeps or drops whole members of the union; it doesn't split the wide types `string` and `number` into their falsy literals. A `number` could also be `NaN` or `-0`, which `0` doesn't cover anyway."
+      },
+      {
+        "id": "d",
+        "text": "`never`",
+        "why": "Tempting if you assume `if (v)` covers every real value of `v`, leaving nothing for the `else`. `never` only appears when every member of the union is always truthy (for example `string[] | Date`). Here `null` is always falsy and `string`/`number` can be falsy, so the branch is reachable."
+      }
+    ],
+    "answer": "b",
+    "explanation": "TypeScript narrows `if (v)` by checking each member of the union:\n\n- `null` is always falsy: removed from the `if` branch, kept in the `else`.\n- `string` can be truthy (`'hi'`) or falsy (`''`): kept in **both** branches.\n- `number` can be truthy (`42`) or falsy (`0`, `NaN`): kept in **both** branches.\n\nSo the `if` branch is `string | number`, and the `else` branch is still `string | number | null`. TypeScript doesn't rewrite `string` as `\"\"` there; it just keeps the whole type.\n\nLiteral types are different, because each literal is either always truthy or always falsy, so they *do* get split:\n\n```ts\nfunction f(v: boolean | 'a' | 0 | 1 | null) {\n  if (v) {\n    v; // true | 1 | \"a\"\n  } else {\n    v; // false | 0 | null\n  }\n}\n```\n\nThe runtime trap: `label(0)` and `label('')` both return `'No value'`, even though `0` and `''` may be perfectly valid inputs. TypeScript doesn't flag this, because the code type-checks. When `0` or `''` are valid values, test for the missing case explicitly: `if (v !== null)` (or `if (v != null)` to exclude both `null` and `undefined`). In that `if` branch `v` is `string | number`, and in the `else` branch it is exactly `null`.",
+    "references": [
+      "https://www.typescriptlang.org/docs/handbook/2/narrowing.html#truthiness-narrowing",
+      "https://developer.mozilla.org/en-US/docs/Glossary/Falsy"
+    ]
+  },
+  {
+    "id": "typescript-011",
+    "difficulty": "medium",
+    "topic": "as const arrays & includes()",
+    "kind": "debug",
+    "question": "With `strict: true` (TypeScript 5.x, `lib` including ES2016 or later), `tsc` reports an error on the `return` line of this type guard. What is the cause?",
+    "snippets": [
+      {
+        "lang": "ts",
+        "code": "const ROLES = ['admin', 'editor', 'viewer'] as const;\ntype Role = typeof ROLES[number];\n\nfunction isRole(s: string): s is Role {\n  return ROLES.includes(s);\n}"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "`includes` takes the array's element type as its parameter, which here is `\"admin\" | \"editor\" | \"viewer\"`, so passing a plain `string` is rejected"
+      },
+      {
+        "id": "b",
+        "text": "`typeof ROLES[number]` resolves to `string`, so `Role` is just `string` and the predicate `s is Role` is invalid",
+        "why": "That's what happens **without** `as const`: `['admin', 'editor', 'viewer']` alone is inferred as `string[]`, so indexing it with `number` gives `string`. With `as const` the array is the readonly tuple `readonly [\"admin\", \"editor\", \"viewer\"]`, and `typeof ROLES[number]` is the union `\"admin\" | \"editor\" | \"viewer\"`. (Even if `Role` were `string`, `s is string` would still be a legal predicate.)"
+      },
+      {
+        "id": "c",
+        "text": "`as const` makes the array readonly, and readonly arrays don't have an `includes` method",
+        "why": "Tempting because `as const` does remove methods: `ReadonlyArray<T>` drops the mutating ones like `push`, `pop`, and `splice`. Non-mutating methods such as `includes`, `indexOf`, `map`, and `filter` are still declared on `ReadonlyArray<T>`, so the method exists; the problem is the type of its argument."
+      },
+      {
+        "id": "d",
+        "text": "A function with a type predicate (`s is Role`) can't return a boolean expression directly; it must use `if` and return `true` or `false` literals",
+        "why": "A type-guard function just has to return a `boolean`; returning any boolean expression is fine (e.g. `return typeof x === 'string';`). Rewriting this with `if (ROLES.includes(s)) return true;` would hit exactly the same error, because the error is on the `includes(s)` call, not on the return."
+      }
+    ],
+    "answer": "a",
+    "explanation": "`as const` gives `ROLES` the type `readonly [\"admin\", \"editor\", \"viewer\"]`, so its element type is the union `\"admin\" | \"editor\" | \"viewer\"` (which is also what `Role` is). In the standard library, `includes` is declared as `includes(searchElement: T, fromIndex?: number): boolean` on both `Array<T>` and `ReadonlyArray<T>`, where `T` is the element type. Passing `s: string` is therefore an ordinary assignability error:\n\n*error TS2345: Argument of type 'string' is not assignable to parameter of type '\"admin\" | \"editor\" | \"viewer\"'.*\n\nThat's awkward here, because checking whether an arbitrary string is one of the allowed values is the whole point of the function. A common fix is to widen the array's type just for the check:\n\n```ts\nfunction isRole(s: string): s is Role {\n  return (ROLES as readonly string[]).includes(s);\n}\n```\n\nThe assertion is safe because a readonly tuple of string literals is assignable to `readonly string[]`, and the predicate still narrows callers: after `if (isRole(input))`, `input` has type `Role`.",
+    "references": [
+      "https://www.typescriptlang.org/docs/handbook/release-notes/typescript-3-4.html#const-assertions",
+      "https://www.typescriptlang.org/docs/handbook/2/narrowing.html#using-type-predicates",
+      "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/includes"
+    ]
+  },
+  {
+    "id": "typescript-012",
+    "difficulty": "hard",
+    "kind": "output",
+    "topic": "Numeric enums & reverse mapping",
+    "question": "This file is compiled with `tsc` (default settings, no `const` on the enum) and the emitted JavaScript is run in Node. What does it print?",
+    "snippets": [
+      {
+        "lang": "ts",
+        "code": "enum Dir {\n  Up,\n  Down = 5,\n  Left,\n}\n\nconsole.log(Object.keys(Dir));"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "`['Up', 'Down', 'Left']`",
+        "why": "Tempting if you picture an enum as a plain object of names to values. But a **numeric** enum also gets a reverse mapping: for every member, `tsc` emits a value-to-name entry as well (`Dir[0] === 'Up'`), so the object has six own keys, not three. Only string enum members skip the reverse mapping."
+      },
+      {
+        "id": "b",
+        "text": "`['Up', '0', 'Down', '5', 'Left', '6']`",
+        "why": "This is the order the properties are **created** in: `Dir[Dir[\"Up\"] = 0] = \"Up\"` adds `'Up'` first, then `'0'`. But `Object.keys` doesn't list everything in creation order. Integer-like keys (array indices) always come first in ascending numeric order, and only then the other string keys in creation order."
+      },
+      {
+        "id": "c",
+        "text": "`['0', '1', '2', 'Up', 'Down', 'Left']`",
+        "why": "This assumes `Left` takes its position in the enum (2). An uninitialized member is the **previous member's value + 1**, not its index, so after `Down = 5`, `Left` is `6`. The reverse-mapping keys are therefore `'0'`, `'5'` and `'6'`."
+      },
+      {
+        "id": "d",
+        "text": "`['0', '5', '6', 'Up', 'Down', 'Left']`"
+      }
+    ],
+    "answer": "d",
+    "explanation": "Two things are going on.\n\n**1. Values.** The first member defaults to `0`. Each member without an initializer is the previous member's value + 1. So `Up = 0`, `Down = 5`, `Left = 6`.\n\n**2. Reverse mapping.** Enums aren't just types; `tsc` emits a real object. For numeric members it writes both directions in one statement:\n\n```js\nvar Dir;\n(function (Dir) {\n  Dir[Dir[\"Up\"] = 0] = \"Up\";\n  Dir[Dir[\"Down\"] = 5] = \"Down\";\n  Dir[Dir[\"Left\"] = 6] = \"Left\";\n})(Dir || (Dir = {}));\n```\n\nThe inner assignment sets `Dir.Up = 0` and evaluates to `0`; the outer one sets `Dir[0] = \"Up\"`. So the object has six own keys, and `Dir[6]` is `'Left'`.\n\n**Key order.** `Object.keys` follows the spec's own-property order: integer-like keys (array indices) first in ascending numeric order, then the remaining string keys in creation order. That gives `['0', '5', '6', 'Up', 'Down', 'Left']`, even though `'Up'` was created before `'0'`.\n\nPractical consequences:\n- `Object.keys(SomeNumericEnum)` or `Object.values(...)` returns twice as many entries as you might expect; filter with `isNaN(Number(key))` to get just the names.\n- **String** enum members (`A = \"a\"`) get no reverse mapping, so `Object.keys` returns only the names.\n- Enums are not erasable syntax: Node's built-in type stripping rejects this file (`ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX`), and TypeScript 5.8's `--erasableSyntaxOnly` flags it, which is why it has to be compiled first.",
+    "references": [
+      "https://www.typescriptlang.org/docs/handbook/enums.html#reverse-mappings",
+      "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object/keys",
+      "https://tc39.es/ecma262/#sec-ordinaryownpropertykeys"
+    ]
+  },
+  {
+    "id": "typescript-013",
+    "difficulty": "expert",
+    "topic": "Widening vs non-widening literals",
+    "kind": "output",
+    "question": "With `strict: true` (TypeScript 5.x), what types does TypeScript infer for `c`, `d`, and `req`?",
+    "snippets": [
+      {
+        "lang": "ts",
+        "code": "const a = 'GET';\nconst b: 'GET' = 'GET';\n\nlet c = a;\nlet d = b;\nconst req = { m1: a, m2: b };"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "`c: string`, `d: string`, `req: { m1: string; m2: string }`",
+        "why": "Tempting if you think a `let` (or a mutable object property) always widens a literal to `string`. It only widens a *widening* literal type, the kind TypeScript infers for an unannotated `const a = 'GET'`. `b` was explicitly annotated as `'GET'`, so its type is a non-widening literal and stays `\"GET\"` when copied into `d` or `m2`."
+      },
+      {
+        "id": "b",
+        "text": "`c: \"GET\"`, `d: \"GET\"`, `req: { m1: \"GET\"; m2: \"GET\" }`",
+        "why": "Tempting because hovering `a` shows `const a: \"GET\"`, so copying it looks like it should copy `\"GET\"`. But the literal type inferred for an unannotated `const` is a *widening* literal: it stays `\"GET\"` while it sits in a `const`, and widens to `string` as soon as it lands in a mutable location such as `let c` or the property `m1`."
+      },
+      {
+        "id": "c",
+        "text": "`c: string`, `d: \"GET\"`, `req: { m1: string; m2: \"GET\" }`"
+      },
+      {
+        "id": "d",
+        "text": "`c: \"GET\"`, `d: string`, `req: { m1: \"GET\"; m2: string }`",
+        "why": "This is the rule backwards. It's tempting to think the inferred `const` literal is the \"exact\" one and the annotation is just a general type. In fact the annotation `b: 'GET'` is what makes the literal non-widening, so `d` and `m2` keep `\"GET\"`; the unannotated `a` is the one whose literal widens to `string`."
+      }
+    ],
+    "answer": "c",
+    "explanation": "TypeScript has two flavors of literal type that print the same (`\"GET\"`) but behave differently when copied into a mutable location:\n\n- **Widening literal**: inferred from a literal expression with no annotation, e.g. `const a = 'GET'`. A `const` keeps it as `\"GET\"`, but a `let` declaration or a mutable object property initialized from it gets the widened type `string`.\n- **Non-widening literal**: written explicitly as a type, e.g. `const b: 'GET' = 'GET'`. It never widens, so `let d = b` is `\"GET\"` and `m2` is `\"GET\"`.\n\nThe declaration file `tsc --declaration` emits for this snippet makes the difference visible:\n\n```ts\ndeclare const a = \"GET\";\ndeclare const b: 'GET';\ndeclare let c: string;\ndeclare let d: \"GET\";\ndeclare const req: { m1: string; m2: \"GET\" };\n```\n\nSo `c = 'POST'` compiles, while `d = 'POST'` errors with *Type '\"POST\"' is not assignable to type '\"GET\"'.* If you want `a` to stay `\"GET\"` when copied, write `const a = 'GET' as const` (which gives a non-widening literal) or annotate the target, e.g. `let c: 'GET' = a`.",
+    "references": [
+      "https://www.typescriptlang.org/docs/handbook/2/everyday-types.html#literal-inference",
+      "https://github.com/microsoft/TypeScript/pull/10676"
+    ]
+  },
+  {
+    "id": "typescript-014",
+    "difficulty": "hard",
+    "topic": "Excess property checks & spread",
+    "kind": "output",
+    "question": "This code is type-checked with `tsc` (`strict: true`, TypeScript 5.x) and, if it compiles, run with Node. What happens?",
+    "snippets": [
+      {
+        "lang": "ts",
+        "code": "type PublicUser = { id: number; name: string };\n\nconst row = { id: 7, name: 'Ana', passwordHash: 'x9f' };\n\nconst pub: PublicUser = { ...row, name: row.name.toUpperCase() };\n\nconsole.log(Object.keys(pub));"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "Compile error: \"Object literal may only specify known properties, and 'passwordHash' does not exist in type 'PublicUser'\"",
+        "why": "Tempting because `{ ...row, name: ... }` is a fresh object literal assigned to an annotated variable, which is exactly where excess property checking runs. But the check only looks at properties written explicitly in the literal (`name` here, which `PublicUser` has). Properties brought in by the spread are not checked, so `passwordHash` slips through silently. Writing `passwordHash: 'y'` explicitly in the literal would trigger this error."
+      },
+      {
+        "id": "b",
+        "text": "Compiles; prints `['id', 'name']`",
+        "why": "Tempting if you think the `PublicUser` annotation shapes the object. Type annotations are erased when compiling; they never add, remove or filter properties at runtime. The spread copies every own enumerable property of `row`, including `passwordHash`."
+      },
+      {
+        "id": "c",
+        "text": "Compiles; prints `['id', 'name', 'passwordHash']`"
+      },
+      {
+        "id": "d",
+        "text": "Compile error: \"'name' is specified more than once, so this usage will be overwritten\"",
+        "why": "That error (TS2783) is real, but it fires when an explicit property comes **before** a spread that is guaranteed to contain the same key, e.g. `{ name: 'X', ...row }`, because the explicit value would always be thrown away. Here `name` comes **after** the spread, so it intentionally overrides `row.name`, which is a normal, allowed pattern."
+      }
+    ],
+    "answer": "c",
+    "explanation": "Two separate facts combine here.\n\n**1. Excess property checking ignores spread properties.** TypeScript flags extra properties only when they are written explicitly in a fresh object literal. In `{ ...row, name: row.name.toUpperCase() }` the only explicit property is `name`, which `PublicUser` declares. The spread contributes `id`, `name` and `passwordHash`, and the result type `{ name: string; id: number; passwordHash: string }` is structurally assignable to `PublicUser` (it has at least `id` and `name`), so it compiles with no error.\n\n**2. Types don't exist at runtime.** The annotation `: PublicUser` is erased. At runtime the spread copies all own enumerable properties of `row`, then `name` is overwritten with `'ANA'`. Overwriting an existing key keeps its original position, so `Object.keys(pub)` is `['id', 'name', 'passwordHash']`.\n\nThis is a realistic leak: the type says `pub` has no `passwordHash`, so TypeScript won't even let you read `pub.passwordHash`, yet `JSON.stringify(pub)` includes it and an API handler doing `res.json(pub)` would send it to the client.\n\nFix it by removing the field at runtime, e.g. with rest destructuring, or by listing the fields you want explicitly:\n\n```ts\nconst { passwordHash, ...rest } = row;\nconst pub: PublicUser = { ...rest, name: rest.name.toUpperCase() };\n// Object.keys(pub) -> ['id', 'name']\n\n// or\nconst pub2: PublicUser = { id: row.id, name: row.name.toUpperCase() };\n```",
+    "references": [
+      "https://www.typescriptlang.org/docs/handbook/2/objects.html#excess-property-checks",
+      "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Spread_syntax#spread_in_object_literals",
+      "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object/keys"
+    ]
+  },
+  {
+    "id": "typescript-015",
+    "difficulty": "hard",
+    "topic": "Classes with private members",
+    "kind": "concept",
+    "question": "With `strict: true` (TypeScript 5.x), which of the four assignments compile?",
+    "snippets": [
+      {
+        "lang": "ts",
+        "code": "class A { private id = 1; name = 'a'; }\nclass B { private id = 1; name = 'a'; }\nclass Sub extends A {}\nclass Pub { name = 'p'; }\n\nconst x1: A = new B();\nconst x2: A = new Sub();\nconst x3: Pub = { name: 'x' };\nconst x4: A = { id: 1, name: 'a' };"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "All four: `x1`, `x2`, `x3` and `x4`",
+        "why": "Tempting because TypeScript is structural and every right-hand side has the same shape as the target. But a `private` (or `protected`) member is the exception: it only matches a member from the same declaration. `B`'s `id` is a separate declaration, so `x1` fails with *Types have separate declarations of a private property 'id'*, and the object literal's public `id` can't stand in for a private one, so `x4` fails too."
+      },
+      {
+        "id": "b",
+        "text": "Only `x2` and `x3`"
+      },
+      {
+        "id": "c",
+        "text": "Only `x2`",
+        "why": "Tempting if you think classes are nominal, like in Java or C#. They aren't: a class with only public members, such as `Pub`, is just a shape, so the plain object `{ name: 'x' }` is assignable to it. Only `private`/`protected` members add the same-declaration requirement."
+      },
+      {
+        "id": "d",
+        "text": "`x1`, `x2` and `x3`, but not `x4`",
+        "why": "Tempting because `private` is erased at runtime (an instance of `B` really does have an `id` property), so it feels like it shouldn't affect compatibility between classes. But the compatibility check is done on types, not runtime objects: two `private` members are compatible only if they come from the same declaration, so `x1` fails just like `x4`."
+      }
+    ],
+    "answer": "b",
+    "explanation": "Classes are compared structurally, with one twist: when the target type has a `private` or `protected` member, the source must have that member **from the same declaration**. In practice that means the source is the same class or a subclass of it.\n\n- `x1` errors: *Type 'B' is not assignable to type 'A'. Types have separate declarations of a private property 'id'.* Identical code in two classes is still two declarations.\n- `x2` compiles: `Sub` inherits `id` from `A`'s own declaration.\n- `x3` compiles: `Pub` has only public members, so any object with a `name: string` fits.\n- `x4` errors: *Property 'id' is private in type 'A' but not in type '{ id: number; name: string; }'.* An object literal can't produce a private member. Without `private`, the same literal would be assignable.\n\nThe same applies to `protected` members and to ES `#private` fields. This gives you a way to make a class type behave nominally: add a private member, and only instances of that class (or its subclasses) are accepted.",
+    "references": [
+      "https://www.typescriptlang.org/docs/handbook/type-compatibility.html#private-and-protected-members-in-classes",
+      "https://www.typescriptlang.org/docs/handbook/2/classes.html#relationships-between-classes"
+    ]
+  },
+  {
+    "id": "typescript-016",
+    "difficulty": "expert",
+    "topic": "Method vs property parameter bivariance",
+    "kind": "concept",
+    "question": "With `strict: true` (TypeScript 5.x, which includes `strictFunctionTypes`), which of the two assignments does `tsc` report as an error?",
+    "snippets": [
+      {
+        "lang": "ts",
+        "code": "type Animal = { name: string };\ntype Dog = Animal & { bark(): void };\n\ninterface MethodHandler {\n  handle(a: Animal): void;      // method syntax\n}\ninterface PropHandler {\n  handle: (a: Animal) => void;  // property syntax\n}\n\nconst dogOnly = (d: Dog) => d.bark();\n\nconst m: MethodHandler = { handle: dogOnly };\nconst p: PropHandler = { handle: dogOnly };"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "Only `p` (the property-syntax `PropHandler`) is an error"
+      },
+      {
+        "id": "b",
+        "text": "Both `m` and `p` are errors",
+        "why": "Tempting because the two interfaces look like two spellings of the same thing, and `strictFunctionTypes` sounds like it covers every function type. But it deliberately excludes parameters of method and constructor declarations. `handle(a: Animal): void` is a method signature, so its parameter is still compared bivariantly and `dogOnly` is accepted."
+      },
+      {
+        "id": "c",
+        "text": "Neither is an error",
+        "why": "Tempting if you learned that TypeScript compares function parameters bivariantly. That was the only behavior before TypeScript 2.6, and it is still what you get with `strictFunctionTypes: false`. With `strict: true` the flag is on, so the property-syntax `handle: (a: Animal) => void` is checked contravariantly and `p` fails."
+      },
+      {
+        "id": "d",
+        "text": "Only `m` (the method-syntax `MethodHandler`) is an error",
+        "why": "This is the rule reversed. Method syntax is the *looser* form: its parameters stay bivariant even under `strictFunctionTypes`. The function-type property is the one that gets the strict, contravariant check."
+      }
+    ],
+    "answer": "a",
+    "explanation": "Under `strictFunctionTypes` (turned on by `strict`), TypeScript checks function parameters **contravariantly**: a function can stand in for `(a: Animal) => void` only if it accepts *every* `Animal`. `dogOnly` only accepts `Dog`, so `p` fails:\n\n```text\nerror TS2322: Type '(d: Dog) => void' is not assignable to type '(a: Animal) => void'.\n  Types of parameters 'd' and 'a' are incompatible.\n    Type 'Animal' is not assignable to type 'Dog'.\n      Property 'bark' is missing in type 'Animal' but required in type '{ bark(): void; }'.\n```\n\nThe flag deliberately skips parameters of **method** and constructor declarations. `handle(a: Animal): void` is a method signature, so its parameter is compared **bivariantly**: it's enough that `Dog` and `Animal` are related in *either* direction. `Dog` is assignable to `Animal`, so `m` compiles. What decides this is how the *target* type declares `handle`, not how the value is written: `{ handle(d: Dog) { d.bark(); } }` (method shorthand) still fails against `PropHandler`.\n\nWhy keep the loophole? TypeScript's release notes for 2.6 say methods are excluded so generic types like `Array<T>` \"continue to mostly relate covariantly\". `Array<T>` has methods such as `push(...items: T[])` that take `T` as a parameter; with strict checking there, `Dog[]` would no longer be assignable to `Animal[]`.\n\nThe cost is real unsoundness. This type-checks and then crashes at runtime:\n\n```ts\nm.handle({ name: 'Tom the cat' }); // TypeError: d.bark is not a function\n```\n\nTakeaway: declare callback and handler members with **property syntax** (`handle: (a: Animal) => void`) when you want TypeScript to catch handlers that only accept a narrower type.",
+    "references": [
+      "https://www.typescriptlang.org/tsconfig/#strictFunctionTypes",
+      "https://www.typescriptlang.org/docs/handbook/release-notes/typescript-2-6.html",
+      "https://www.typescriptlang.org/docs/handbook/type-compatibility.html"
+    ]
+  },
+  {
+    "id": "typescript-017",
+    "difficulty": "medium",
+    "topic": "Function assignability: params & void",
+    "kind": "misconception",
+    "question": "With `strict: true` (TypeScript 5.x), which of these four lines does `tsc` report an error on?",
+    "snippets": [
+      {
+        "lang": "ts",
+        "code": "const f1: (a: number, b: number) => void = (a) => {};\nconst f2: (a: number) => void = (a: number, b: number) => {};\nconst f3: () => void = () => 42;\nfunction f4(): void { return 42; }"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "Only `f2`",
+        "why": "Tempting if you know the parameter-count rule but treat `void` as \"the return value is ignored\" everywhere. That loose meaning only applies when `void` comes from a function *type* the function is assigned to (as with `f3`). `f4` writes `: void` as its own return type annotation, and then returning a value is checked like any other annotation: *Type 'number' is not assignable to type 'void'.*"
+      },
+      {
+        "id": "b",
+        "text": "`f1` and `f3`",
+        "why": "This is the \"signatures must match exactly\" misconception. `f1` has *fewer* parameters than its type, which is allowed because JavaScript simply ignores extra arguments. `f3` returns `42` through a function type whose return is `void`, which is also allowed: a `void` return in a function type means callers won't use the result, not that the function may not produce one. (It also misses the two lines that really do error.)"
+      },
+      {
+        "id": "c",
+        "text": "Only `f4`",
+        "why": "Tempting if you reason that JavaScript doesn't care about argument counts, so an extra parameter must be harmless. The direction matters: `f2`'s type promises callers they only need to pass one argument, but the function needs two, so `b` would be `undefined` while typed as `number`. TypeScript rejects it: *Target signature provides too few arguments. Expected 2 or more, but got 1.*"
+      },
+      {
+        "id": "d",
+        "text": "`f2` and `f4`"
+      }
+    ],
+    "answer": "d",
+    "explanation": "Two separate rules are in play.\n\n**Parameter count: fewer is fine, more is not.**\n\n- `f1`: the function takes one parameter but its type has two. That compiles: callers of `f1` still have to pass two arguments (`f1(1)` is an error), and the function just ignores the second one, exactly like `[1, 2].forEach(x => ...)` ignores the index and array arguments.\n- `f2`: the function needs two parameters but its type only guarantees one, so `b` could be `undefined` at runtime. Error: *Type '(a: number, b: number) => void' is not assignable to type '(a: number) => void'. Target signature provides too few arguments. Expected 2 or more, but got 1.*\n\n**`void` return: depends on where it comes from.**\n\n- `f3`: when a function expression is checked against a function **type** that returns `void`, it may return anything. This is what lets `[1, 2].forEach(x => out.push(x))` compile even though `push` returns a number. The value isn't thrown away at runtime: `f3()` really returns `42`; TypeScript just types the call as `void`, so `const n: number = f3()` errors.\n- `f4`: when the function's **own** return type annotation is `void`, returning a value is an error: *Type 'number' is not assignable to type 'void'.* The same applies to `const f = (): void => 42` or `function (): void { return 42; }`.\n\nSo `tsc` reports errors on `f2` and `f4` only.",
+    "references": [
+      "https://www.typescriptlang.org/docs/handbook/type-compatibility.html#comparing-two-functions",
+      "https://www.typescriptlang.org/docs/handbook/2/functions.html#return-type-void",
+      "https://github.com/microsoft/TypeScript/wiki/FAQ#why-are-functions-with-fewer-parameters-assignable-to-functions-that-take-more-parameters"
+    ]
+  },
+  {
+    "id": "typescript-018",
+    "difficulty": "expert",
+    "topic": "infer with overloaded functions",
+    "kind": "output",
+    "question": "With `strict: true` (TypeScript 5.x), what are the types `R` and `P`?",
+    "snippets": [
+      {
+        "lang": "ts",
+        "code": "function toggle(v: string): boolean;\nfunction toggle(v: boolean): string;\nfunction toggle(v: string | boolean): string | boolean {\n  return typeof v === 'string' ? v.length > 0 : String(v);\n}\n\ntype R = ReturnType<typeof toggle>;\ntype P = Parameters<typeof toggle>;"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "`R` is `boolean`, `P` is `[v: string]`",
+        "why": "Tempting because a call like `toggle('hi')` resolves to the first overload that matches, so the first signature feels like the \"main\" one. But `ReturnType` and `Parameters` don't resolve a call; they are conditional types that use `infer`, and when `infer` meets a type with several call signatures it uses the **last** one, `(v: boolean): string`."
+      },
+      {
+        "id": "b",
+        "text": "`R` is `string | boolean`, `P` is `[v: string | boolean]`",
+        "why": "Tempting because the implementation signature looks like the catch-all that covers every overload. But once a function has overload signatures, the implementation signature is not part of its type at all: `typeof toggle` has only the two overload signatures (the emitted `.d.ts` contains just those two). So there is no `string | boolean` signature for `infer` to read."
+      },
+      {
+        "id": "c",
+        "text": "`R` is `string | boolean`, `P` is `[v: string] | [v: boolean]`",
+        "why": "Tempting if you expect `infer` to collect a result from every overload and union them, the way a conditional type distributes over a union. But a set of overloads is one type with several call signatures, not a union of function types, so nothing distributes. TypeScript picks a single signature (the last) and infers only from it."
+      },
+      {
+        "id": "d",
+        "text": "`R` is `string`, `P` is `[v: boolean]`"
+      }
+    ],
+    "answer": "d",
+    "explanation": "`ReturnType<T>` and `Parameters<T>` are conditional types built with `infer`, e.g. `T extends (...args: any) => infer R ? R : any`. The TypeScript handbook states the rule for overloads: when inferring from a type with multiple call signatures, such as an overloaded function, inferences are made from the **last** signature.\n\n`typeof toggle` has exactly two call signatures, the two overloads. The implementation signature `(v: string | boolean): string | boolean` is not visible from the outside, so it is not one of them. The last signature is `(v: boolean): string`, which gives:\n\n- `R` = `string`\n- `P` = `[v: boolean]` (a labeled tuple; the label comes from the parameter name)\n\nA custom helper like `type MyRet<F> = F extends (...a: any[]) => infer X ? X : never` behaves the same way and also gives `string`.\n\nA related trap: because the implementation signature isn't callable, passing a union fails even though the implementation accepts it:\n\n```ts\ndeclare const x: string | boolean;\ntoggle(x); // error TS2769: No overload matches this call.\n```\n\nEach overload is checked separately, and neither accepts `string | boolean`. The fix is to add a union overload explicitly, e.g. `function toggle(v: string | boolean): string | boolean;` as the last overload. Then `toggle(x)` compiles, and since that overload is now last, `ReturnType<typeof toggle>` becomes `string | boolean` and `Parameters<typeof toggle>` becomes `[v: string | boolean]`.",
+    "references": [
+      "https://www.typescriptlang.org/docs/handbook/2/conditional-types.html#inferring-within-conditional-types",
+      "https://www.typescriptlang.org/docs/handbook/2/functions.html#function-overloads",
+      "https://www.typescriptlang.org/docs/handbook/utility-types.html#returntypetype"
+    ]
+  },
+  {
+    "id": "typescript-019",
+    "difficulty": "expert",
+    "topic": "Mapped type modifiers (-?)",
+    "kind": "output",
+    "question": "Assume `strict: true` and `exactOptionalPropertyTypes` is **off** (the default). What type is `R`?",
+    "snippets": [
+      {
+        "lang": "ts",
+        "code": "type U = {\n  a?: number;\n  b?: number | undefined;\n  c: number | undefined;\n  readonly d?: string;\n};\n\ntype R = Required<U>;"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "`{ a: number; b: number | undefined; c: number | undefined; readonly d: string }`",
+        "why": "Tempting because `b` spells out `| undefined`, so it looks like part of the declared type that should survive. But with `exactOptionalPropertyTypes` off, `b?: number` and `b?: number | undefined` mean exactly the same thing, so `-?` strips `undefined` from both `a` and `b`. You'd only get `b: number | undefined` with `exactOptionalPropertyTypes` turned on."
+      },
+      {
+        "id": "b",
+        "text": "`{ a: number; b: number; c: number; readonly d: string }`",
+        "why": "Tempting if you think `Required` means \"no `undefined` anywhere\". But `-?` only removes `undefined` from properties that were **optional** in the source type. `c` was already required, so its `number | undefined` stays as written. `Required<U>` still accepts `c: undefined`; it just doesn't let you leave `c` out."
+      },
+      {
+        "id": "c",
+        "text": "`{ a: number; b: number; c: number | undefined; readonly d: string }`"
+      },
+      {
+        "id": "d",
+        "text": "`{ a: number; b: number; c: number | undefined; d: string }`",
+        "why": "Tempting if you picture `Required` as rebuilding each property from scratch. `Required<T>` is `{ [P in keyof T]-?: T[P] }`, a homomorphic mapped type (it maps over `keyof T`), so it keeps every modifier it doesn't explicitly change. Only `?` is removed; `readonly` stays, and `R`'s `d` is still read-only (assigning to it errors with TS2540). Removing `readonly` would take `-readonly`."
+      }
+    ],
+    "answer": "c",
+    "explanation": "`Required<T>` is defined as `{ [P in keyof T]-?: T[P] }`. Because it maps over `keyof T`, it is **homomorphic**: each property keeps its original modifiers unless the mapping changes them. The `-?` modifier removes optionality, and for properties that were optional it also removes `undefined` from the property type.\n\n- `a?: number`: optional, so under `strictNullChecks` it reads as `number | undefined`. `-?` makes it required and strips `undefined`, giving `a: number`.\n- `b?: number | undefined`: with `exactOptionalPropertyTypes` off, this is identical to `b?: number`. The written `| undefined` adds nothing, so it's stripped as well: `b: number`.\n- `c: number | undefined`: already required, so `-?` has nothing to remove and leaves `undefined` alone: `c: number | undefined`.\n- `readonly d?: string`: `?` goes away, `readonly` stays: `readonly d: string`.\n\nYou can see each part in the compiler errors:\n\n```ts\nconst r1: R = { a: 1, b: undefined, c: undefined, d: \"x\" };\n// Type 'undefined' is not assignable to type 'number'. (on b)\nconst r2: R = { a: 1, b: 2, d: \"x\" };\n// Property 'c' is missing ... but required in type 'Required<U>'.\nconst r3: R = { a: 1, b: 2, c: undefined, d: \"x\" }; // OK\nr3.d = \"z\";\n// Cannot assign to 'd' because it is a read-only property.\n```\n\nWith `exactOptionalPropertyTypes` on, `b`'s explicit `| undefined` becomes a real part of its type, and `Required<U>` would keep it as `b: number | undefined`. That's why the question pins the flag off.",
+    "references": [
+      "https://www.typescriptlang.org/docs/handbook/2/mapped-types.html#mapping-modifiers",
+      "https://www.typescriptlang.org/docs/handbook/utility-types.html#requiredtype",
+      "https://www.typescriptlang.org/tsconfig/#exactOptionalPropertyTypes"
+    ]
+  },
+  {
+    "id": "typescript-020",
+    "difficulty": "hard",
+    "topic": "keyof with index signatures",
+    "kind": "output",
+    "question": "With `strict: true` (TypeScript 5.x), what type is `K`?",
+    "snippets": [
+      {
+        "lang": "ts",
+        "code": "type Flags = { [name: string]: boolean };\n\ntype K = keyof Flags;"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "`string`",
+        "why": "Tempting because the index signature literally says `[name: string]`. But a string index signature also accepts numeric keys (JavaScript converts `flags[0]` to `flags[\"0\"]`), so `keyof` includes `number` too. By contrast, `keyof` of a mapped type such as `Record<string, boolean>` (not a hand-written index signature) is exactly `string`."
+      },
+      {
+        "id": "b",
+        "text": "`string | number`"
+      },
+      {
+        "id": "c",
+        "text": "`string | number | symbol`",
+        "why": "That's `keyof any` (also written `PropertyKey`), the type of every possible property key. A string index signature doesn't cover symbol keys, so `symbol` is not part of `keyof Flags`; assigning `Symbol()` to a `K` is an error."
+      },
+      {
+        "id": "d",
+        "text": "`never`",
+        "why": "Tempting because `Flags` declares no named properties. But `keyof` also reports index signatures: any string (or number) is a valid key of `Flags`, so the result is far from empty."
+      }
+    ],
+    "answer": "b",
+    "explanation": "For a type with a **string index signature**, `keyof` returns `string | number`. JavaScript object keys are strings (or symbols), and a number used as a key is converted to a string: `flags[0]` reads the property `\"0\"`. Because of that, TypeScript lets you index `Flags` with a number, and `keyof` reflects it.\n\nCompare:\n\n```ts\ntype NumDict = { [k: number]: boolean };\ntype A = keyof NumDict;                // number\ntype B = keyof Record<string, boolean>; // string (mapped type, not an index signature)\ntype C = keyof any;                    // string | number | symbol\n```\n\nThis bites when you treat keys as strings: inside `function g(key: keyof Flags)`, `key.toUpperCase()` fails to type-check because `toUpperCase` doesn't exist on `number`. The old `keyofStringsOnly` compiler flag that changed this behavior was deprecated in TypeScript 5.0 and has since been removed (TypeScript 5.8 rejects it with error TS5102). When you need only the string keys, write `Extract<keyof T, string>` or `keyof T & string`; both give `string` here.",
+    "references": [
+      "https://www.typescriptlang.org/docs/handbook/2/keyof-types.html",
+      "https://www.typescriptlang.org/docs/handbook/2/objects.html#index-signatures"
+    ]
+  },
+  {
+    "id": "typescript-021",
+    "difficulty": "medium",
+    "topic": "Template literal types",
+    "kind": "output",
+    "question": "With `strict: true` (TypeScript 5.x), what type is `Cls`, and what happens on the last line?",
+    "snippets": [
+      {
+        "lang": "ts",
+        "code": "type Size = 'sm' | 'lg';\ntype Tone = 'red' | 'blue' | 'green';\n\ntype Cls = `btn-${Size}-${Tone}`;\n\nconst c: Cls = 'btn-red-sm';"
+      }
+    ],
+    "options": [
+      {
+        "id": "a",
+        "text": "A union of 6 string literals, one per `Size` × `Tone` combination (`\"btn-sm-red\" | \"btn-sm-blue\" | … | \"btn-lg-green\"`); the last line is a type error"
+      },
+      {
+        "id": "b",
+        "text": "`string`; the last line compiles",
+        "why": "Tempting because a template literal *looks* like string concatenation, and concatenating strings at runtime gives you a plain `string`. But in a type position, when every placeholder is a string literal or a union of literals, TypeScript computes the exact literal results. `Cls` is a finite union, so `'btn-red-sm'` is checked against its 6 members and rejected."
+      },
+      {
+        "id": "c",
+        "text": "The pattern type `` `btn-${string}-${string}` ``; the last line compiles because the value has that shape",
+        "why": "Tempting if you think the placeholders only describe the *shape* of the string. A pattern type like `` `btn-${string}-${string}` `` does exist, and it would accept `'btn-red-sm'`, but you only get it when a placeholder is a wide type such as `string`. Here the placeholders are literal unions, so `Cls` is the concrete list of combinations, and order matters: `'btn-red-sm'` puts the tone first, which matches none of them."
+      },
+      {
+        "id": "d",
+        "text": "A union of 5 string literals (`\"btn-sm\" | \"btn-lg\" | \"btn-red\" | \"btn-blue\" | \"btn-green\"`); the last line is a type error",
+        "why": "Tempting if you think each placeholder's union is expanded on its own, so the counts add up (2 + 3 = 5). TypeScript doesn't do that: every result string fills in **both** placeholders, so it builds every combination and the counts multiply (2 × 3 = 6). The last line does error, but because `Cls` is the 6-member union, not this 5-member one; `const x: Cls = 'btn-sm'` is also rejected."
+      }
+    ],
+    "answer": "a",
+    "explanation": "When a placeholder in a template literal type is a union, TypeScript substitutes each member separately. With several union placeholders it produces **every combination** (the cross product), so the member count is the product of the union sizes: 2 × 3 = 6.\n\n```ts\ntype Cls =\n  | \"btn-sm-red\" | \"btn-sm-blue\" | \"btn-sm-green\"\n  | \"btn-lg-red\" | \"btn-lg-blue\" | \"btn-lg-green\";\n```\n\n`tsc` confirms it on the last line:\n\n```text\nerror TS2322: Type '\"btn-red-sm\"' is not assignable to type '\"btn-sm-red\" | \"btn-sm-blue\" | \"btn-sm-green\" | \"btn-lg-red\" | \"btn-lg-blue\" | \"btn-lg-green\"'.\n```\n\nThe positions are fixed by the template, so `'btn-red-sm'` (tone before size) is not a member, while `'btn-lg-green'` is.\n\nBecause the counts multiply, big unions blow up quickly: four placeholders of 10 digits each is already 10,000 members, and in TypeScript 5.8 a product of 100,000 makes `tsc` fail with *TS2590: Expression produces a union type that is too complex to represent.* For open-ended values use a wide placeholder such as `` `btn-${string}` `` instead.",
+    "references": [
+      "https://www.typescriptlang.org/docs/handbook/2/template-literal-types.html"
+    ]
+  }
+]
